@@ -484,4 +484,4 @@ func main() {
 		stateMutex:      sync.RWMutex{},
 		difficulty:      &big.Int{},
 		networkNodes:    map[peer.ID]*NetworkNode{},
-	};
+	}
