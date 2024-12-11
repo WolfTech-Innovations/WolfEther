@@ -1,70 +1,40 @@
 package main
 
 import (
-	"bytes"
-	"context"
 	"crypto/ecdsa"
 	"crypto/sha256"
-	"encoding/binary"
-	"encoding/hex"
-	"errors"
+	"encoding/json"
 	"fmt"
 	"log"
 	"math/big"
-	"net"
-	"os"
-	"sort"
+	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
-	"github.com/ethereum/go-ethereum/accounts"
-	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/p2p"
-	"github.com/ethereum/go-ethereum/p2p/discover"
-	"github.com/ethereum/go-ethereum/rlp"
-
-	"github.com/libp2p/go-libp2p"
-	libp2pcore "github.com/libp2p/go-libp2p/core"
-	"github.com/libp2p/go-libp2p/core/host"
-	"github.com/libp2p/go-libp2p/core/network"
-	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/libp2p/go-libp2p/core/protocol"
-	"github.com/multiformats/go-multiaddr"
+	"github.com/mattn/go-colorable"
+	"github.com/sirupsen/logrus"
 )
 
 const (
 	// Network Constants
-	WolfEtherVersion = "1.0.0"
-	NetworkID        = 1337
-	DefaultPort      = 30303
-
-	// Consensus Parameters
-	BlockReward         = 50       // Native currency reward for mining
-	DifficultyTarget    = 4         // Leading zero bytes for PoW
-	BlockTime           = 15        // Target block time in seconds
-	MaxBlockTransactions = 100      // Maximum transactions per block
-	BlockchainDBPath    = "./blockchain_data"
-
-	// Protocol Identifiers
-	TransactionProtocol = "/wolfether/tx/1.0.0"
-	BlockProtocol       = "/wolfether/block/1.0.0"
-	SyncProtocol        = "/wolfether/sync/1.0.0"
+	WolfEtherVersion     = "1.0.0"
+	NetworkID            = 1337
+	DefaultPort          = 30303
+	BlockReward          = 50
+	DifficultyTarget     = 4
+	BlockTime            = 15
+	MaxBlockTransactions = 100
+	BlockchainDBPath     = "./blockchain_data"
 )
 
-// Cryptographic Primitives and Utility Structs
-type CryptoUtils struct {
-	keyStore *keystore.KeyStore
-}
+var (
+	// Simulating an in-memory "database"
+	blockchain *Blockchain
+)
 
-type NetworkAddress struct {
-	IP   net.IP
-	Port uint16
-}
-
-// Comprehensive Block Structure
 type Block struct {
 	Header       BlockHeader
 	Transactions []*Transaction
@@ -73,190 +43,168 @@ type Block struct {
 	Nonce        uint64
 }
 
-// Enhanced Block Header
 type BlockHeader struct {
-	Version         uint32
-	PreviousHash    []byte
-	MerkleRoot      []byte
-	Timestamp       uint64
-	Height          uint64
+	Version          uint32
+	PreviousHash     []byte
+	MerkleRoot       []byte
+	Timestamp        uint64
+	Height           uint64
 	DifficultyTarget uint32
-	Coinbase        common.Address
+	Coinbase         common.Address
 }
 
-// Advanced Transaction Structure
 type Transaction struct {
-	From        common.Address
-	To          common.Address
-	Value       *big.Int
-	Data        []byte
-	Nonce       uint64
-	Signature   []byte
-	GasLimit    uint64
-	GasPrice    *big.Int
-	CreatedAt   time.Time
-	ContractTx  bool
+	From      common.Address
+	To        common.Address
+	Value     *big.Int
+	Nonce     uint64
+	Signature []byte
+	CreatedAt time.Time
 }
 
-// Advanced Account Model
+type Blockchain struct {
+	chain           []*Block
+	accountState    map[common.Address]*Account
+	transactionPool []*Transaction
+	stateMutex      sync.RWMutex
+	difficulty      *big.Int
+}
+
 type Account struct {
 	Address     common.Address
-	PublicKey   []byte
 	Balance     *big.Int
 	Nonce       uint64
 	StorageRoot []byte
 	CodeHash    []byte
 }
 
-// Comprehensive Blockchain State
-type Blockchain struct {
-	chain            []*Block
-	accountState     map[common.Address]*Account
-	transactionPool  []*Transaction
-	stateMutex       sync.RWMutex
-	difficulty       *big.Int
-	networkNodes     map[peer.ID]*NetworkNode
+type NetworkNode struct {
+	Blockchain *Blockchain
 }
 
-// Advanced Consensus Mechanism
-type ConsensusEngine struct {
-	blockchain      *Blockchain
-	miningScheduler *MiningScheduler
-	validator       *BlockValidator
-}
-
-// Enhanced Mining Scheduler
-type MiningScheduler struct {
-	miningQueue     chan *Block
-	stopMining      chan struct{}
-	currentMiner    common.Address
-	miningInterval  time.Duration
-	miningStrategy  MiningStrategy
-}
-
-// Mining Strategy Interface
-type MiningStrategy interface {
-	SelectTransactions(pool []*Transaction) []*Transaction
-	AdjustDifficulty(blockchain *Blockchain) *big.Int
-}
-
-// Block Validator
-type BlockValidator struct {
+type RPCHandler struct {
 	blockchain *Blockchain
 }
 
-// Advanced Networking Component
-type NetworkNode struct {
-	host             host.Host
-	peerStore        map[peer.ID]peer.AddrInfo
-	bootstrapNodes   []multiaddr.Multiaddr
-	discoveryService *PeerDiscoveryService
-	blockchain       *Blockchain
-	consensusEngine  *ConsensusEngine
-}
-
-// Peer Discovery Service
-type PeerDiscoveryService struct {
-	host           host.Host
-	peerDiscovered chan peer.AddrInfo
-	routingTable   *RoutingTable
-}
-
-// Routing Table for Efficient Peer Management
-type RoutingTable struct {
-	peers      map[peer.ID]peer.AddrInfo
-	peersMutex sync.RWMutex
-}
-
-// Smart Contract Registry
-type SmartContractRegistry struct {
-	contracts map[common.Address]*SmartContract
-	mutex     sync.RWMutex
-}
-
-type SmartContract struct {
-	Address     common.Address
-	Code        []byte
-	Storage     map[string][]byte
-	Owner       common.Address
-	Executable  func(tx *Transaction) ([]byte, error)
-}
-
-// Cryptographic Utility Methods
-func (cu *CryptoUtils) GenerateKeyPair() (*ecdsa.PrivateKey, common.Address, error) {
-	privateKey, err := crypto.GenerateKey()
-	if err != nil {
-		return nil, common.Address{}, err
+func NewRPCHandler(blockchain *Blockchain) *RPCHandler {
+	return &RPCHandler{
+		blockchain: blockchain,
 	}
-	address := crypto.PubkeyToAddress(privateKey.PublicKey)
-	return privateKey, address, nil
 }
 
-func (cu *CryptoUtils) SignTransaction(tx *Transaction, privateKey *ecdsa.PrivateKey) error {
-	txHash := sha256.Sum256(cu.serializeTransaction(tx))
-	signature, err := crypto.Sign(txHash[:], privateKey)
-	if err != nil {
-		return err
-	}
-	tx.Signature = signature
-	return nil
-}
-
-func (cu *CryptoUtils) serializeTransaction(tx *Transaction) []byte {
-	var serialized []byte
-	serialized = append(serialized, tx.From.Bytes()...)
-	serialized = append(serialized, tx.To.Bytes()...)
-	serialized = append(serialized, tx.Value.Bytes()...)
-	serialized = append(serialized, tx.Data...)
-	serialized = append(serialized, byte(tx.Nonce))
-	return serialized
-}
-
-// Blockchain Methods
+// Consensus and Block Addition
 func (bc *Blockchain) AddBlock(block *Block) error {
 	bc.stateMutex.Lock()
 	defer bc.stateMutex.Unlock()
 
-	// Validate block
-	if err := bc.validateBlock(block); err != nil {
-		return err
-	}
-
-	// Update account states
-	for _, tx := range block.Transactions {
-		bc.processTransaction(tx)
-	}
-
-	// Add block to chain
 	bc.chain = append(bc.chain, block)
-	return nil
-}
-
-func (bc *Blockchain) validateBlock(block *Block) error {
-	// Check proof of work
-	if !bc.validateProofOfWork(block) {
-		return errors.New("invalid proof of work")
-	}
-
-	// Check transactions
 	for _, tx := range block.Transactions {
-		if err := bc.validateTransaction(tx); err != nil {
+		if err := bc.processTransaction(tx); err != nil {
 			return err
 		}
 	}
 
+	logrus.WithFields(logrus.Fields{
+		"block_height": block.Header.Height,
+		"block_hash":   fmt.Sprintf("%x", block.Hash),
+	}).Info("Added Block")
 	return nil
 }
 
-func (bc *Blockchain) validateProofOfWork(block *Block) bool {
-	hash := sha256.Sum256(bc.serializeBlock(block))
-	difficulty := block.Header.DifficultyTarget
+func (rpc *RPCHandler) handleGetBlock(w http.ResponseWriter, r *http.Request) {
+	blockHeight := r.URL.Query().Get("height")
+	height, err := strconv.Atoi(blockHeight)
+	if err != nil {
+		http.Error(w, "Invalid block height", http.StatusBadRequest)
+		return
+	}
 
-	for i := uint32(0); i < difficulty; i++ {
-		if hash[i] != 0 {
-			return false
+	if height < 0 || height >= len(rpc.blockchain.chain) {
+		http.Error(w, "Block not found", http.StatusNotFound)
+		return
+	}
+
+	block := rpc.blockchain.chain[height]
+	response := struct {
+		Height       uint64         `json:"height"`
+		PreviousHash string         `json:"previous_hash"`
+		Transactions []*Transaction `json:"transactions"`
+	}{
+		Height:       block.Header.Height,
+		PreviousHash: fmt.Sprintf("%x", block.Header.PreviousHash),
+		Transactions: block.Transactions,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+func (rpc *RPCHandler) handleSendTransaction(w http.ResponseWriter, r *http.Request) {
+	var tx Transaction
+	if err := json.NewDecoder(r.Body).Decode(&tx); err != nil {
+		http.Error(w, "Invalid transaction data", http.StatusBadRequest)
+		return
+	}
+
+	// Process the transaction
+	err := rpc.blockchain.processTransaction(&tx)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Return success response
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Transaction processed"))
+}
+
+// Start the HTTP RPC server
+func startRPCServer(blockchain *Blockchain) {
+	rpcHandler := NewRPCHandler(blockchain)
+	http.HandleFunc("/get_block", rpcHandler.handleGetBlock)
+	http.HandleFunc("/send_transaction", rpcHandler.handleSendTransaction)
+	logrus.Info("Starting RPC server at port 8080")
+	log.Fatal(http.ListenAndServe(":8080", nil))
+}
+
+func initializeBlockchain() *Blockchain {
+	genesisAccount := common.HexToAddress("0x0000000000000000000000000000000000000000")
+	accountState := make(map[common.Address]*Account)
+	accountState[genesisAccount] = &Account{
+		Address: genesisAccount,
+		Balance: big.NewInt(1000000),
+	}
+
+	genesisBlock := &Block{
+		Header: BlockHeader{
+			Version:          1,
+			PreviousHash:     []byte{},
+			Timestamp:        uint64(time.Now().Unix()),
+			Height:           0,
+			DifficultyTarget: DifficultyTarget,
+		},
+		Transactions: []*Transaction{},
+	}
+
+	blockchain := &Blockchain{
+		chain:           []*Block{genesisBlock},
+		accountState:    accountState,
+		transactionPool: []*Transaction{},
+	}
+	return blockchain
+}
+
+func (bc *Blockchain) mineBlock(block *Block) []byte {
+	for nonce := uint64(0); ; nonce++ {
+		block.Nonce = nonce
+		blockHash := sha256.Sum256(bc.serializeBlock(block))
+		if bc.isValidPoW(blockHash) {
+			return blockHash[:]
 		}
 	}
+}
+
+func (bc *Blockchain) isValidPoW(blockHash [32]byte) bool {
 	return true
 }
 
@@ -269,219 +217,150 @@ func (bc *Blockchain) serializeBlock(block *Block) []byte {
 	return serialized
 }
 
+// Gasless Transaction Processing (without gas fees)
 func (bc *Blockchain) processTransaction(tx *Transaction) error {
-	// Update sender account
+	// Ensure the sender exists, create if necessary
 	sender := bc.accountState[tx.From]
+	if sender == nil {
+		// Create the sender account with an initial balance of 0 if not found
+		sender = &Account{
+			Address: tx.From,
+			Balance: new(big.Int), // Initial balance is 0
+			Nonce:   0,            // Initial nonce
+		}
+		bc.accountState[tx.From] = sender
+	}
+
+	// Ensure the recipient exists, create if necessary
+	recipient := bc.accountState[tx.To]
+	if recipient == nil {
+		// Create the recipient account with an initial balance of 0 if not found
+		recipient = &Account{
+			Address: tx.To,
+			Balance: new(big.Int), // Initial balance 0
+		}
+		bc.accountState[tx.To] = recipient
+	}
+
+	// Check if the sender has enough balance for the transaction
+	if sender.Balance.Cmp(tx.Value) < 0 {
+		// Log the issue but don't quit
+		fmt.Printf("Transaction from %s to %s failed due to insufficient funds.\n", tx.From.Hex(), tx.To.Hex())
+		// Return an error indicating insufficient balance, don't stop execution
+		return fmt.Errorf("insufficient balance for sender %s", tx.From.Hex())
+	}
+
+	// Update sender's balance and nonce
 	sender.Balance.Sub(sender.Balance, tx.Value)
 	sender.Nonce++
 
-	// Update recipient account
-	recipient := bc.accountState[tx.To]
+	// Update recipient's balance
 	recipient.Balance.Add(recipient.Balance, tx.Value)
+
+	// Log success of the transaction
+	fmt.Printf("Transaction from %s to %s of value %s completed successfully.\n", tx.From.Hex(), tx.To.Hex(), tx.Value.String())
 
 	return nil
 }
 
-// Consensus Engine Methods
-func (ce *ConsensusEngine) MineBlock() (*Block, error) {
-	// Select transactions
-	transactions := ce.miningScheduler.miningStrategy.SelectTransactions(
-		ce.blockchain.transactionPool,
-	)
-
-	// Get previous block
-	prevBlock := ce.blockchain.chain[len(ce.blockchain.chain)-1]
-
-	// Create block
+// Create Block with Transactions
+func (bc *Blockchain) CreateNewBlock(previousBlock *Block, transactions []*Transaction) *Block {
 	block := &Block{
 		Header: BlockHeader{
 			Version:          1,
-			PreviousHash:     prevBlock.Hash,
+			PreviousHash:     previousBlock.Hash,
 			Timestamp:        uint64(time.Now().Unix()),
-			Height:           prevBlock.Header.Height + 1,
-			DifficultyTarget: ce.miningScheduler.miningStrategy.AdjustDifficulty(ce.blockchain).Uint32(),
+			Height:           previousBlock.Header.Height + 1,
+			DifficultyTarget: DifficultyTarget,
 		},
 		Transactions: transactions,
 	}
 
-	// Perform Proof of Work
-	for nonce := uint64(0); ; nonce++ {
-		block.Nonce = nonce
-		blockHash := sha256.Sum256(ce.blockchain.serializeBlock(block))
-		block.Hash = blockHash[:]
-
-		if ce.validateBlockHash(block.Hash, block.Header.DifficultyTarget) {
-			break
-		}
-	}
-
-	return block, nil
+	blockHash := bc.mineBlock(block)
+	block.Hash = blockHash
+	return block
 }
 
-func (ce *ConsensusEngine) validateBlockHash(hash []byte, difficulty uint32) bool {
-	for i := uint32(0); i < difficulty; i++ {
-		if hash[i] != 0 {
-			return false
-		}
-	}
-	return true
-}
-
-// Networking Methods
-func (nn *NetworkNode) InitializeNetworking() error {
-	// Create libp2p host
-	host, err := libp2p.New(
-		libp2p.ListenAddrStrings(
-			fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", DefaultPort),
-		),
-	)
+// Ethereum Transaction Signing
+func signTransaction(privateKey *ecdsa.PrivateKey, tx *Transaction) ([]byte, error) {
+	txData := fmt.Sprintf("%s%s%s%s", tx.From.Hex(), tx.To.Hex(), tx.Value.String(), strconv.FormatUint(tx.Nonce, 10))
+	hash := sha256.Sum256([]byte(txData))
+	signature, err := crypto.Sign(hash[:], privateKey)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	nn.host = host
-
-	// Setup protocols
-	nn.host.SetStreamHandler(protocol.ID(TransactionProtocol), nn.handleTransaction)
-	nn.host.SetStreamHandler(protocol.ID(BlockProtocol), nn.handleBlock)
-	nn.host.SetStreamHandler(protocol.ID(SyncProtocol), nn.handleBlockchainSync)
-
-	// Initialize peer discovery
-	nn.discoveryService = &PeerDiscoveryService{
-		host:           host,
-		peerDiscovered: make(chan peer.AddrInfo, 100),
-		routingTable:   &RoutingTable{peers: make(map[peer.ID]peer.AddrInfo)},
-	}
-
-	go nn.discoveryService.StartDiscovery()
-
-	return nil
+	return signature, nil
 }
 
-func (nn *NetworkNode) handleTransaction(stream network.Stream) {
-	defer stream.Close()
-
-	var tx Transaction
-	if err := rlp.Decode(stream, &tx); err != nil {
-		log.Printf("Transaction decode error: %v", err)
-		return
-	}
-
-	// Validate and add to transaction pool
-	if err := nn.blockchain.validateTransaction(&tx); err == nil {
-		nn.blockchain.transactionPool = append(nn.blockchain.transactionPool, &tx)
-	}
-}
-
-func (nn *NetworkNode) handleBlock(stream network.Stream) {
-	defer stream.Close()
-
-	var block Block
-	if err := rlp.Decode(stream, &block); err != nil {
-		log.Printf("Block decode error: %v", err)
-		return
-	}
-
-	// Add block to blockchain
-	nn.blockchain.AddBlock(&block)
-}
-
-func (nn *NetworkNode) BroadcastTransaction(tx *Transaction) error {
-	txBytes, err := rlp.EncodeToBytes(tx)
+func generateWallet() (common.Address, *ecdsa.PrivateKey) {
+	privateKey, err := crypto.GenerateKey()
 	if err != nil {
-		return err
+		log.Fatal(err)
 	}
-
-	for _, peerInfo := range nn.peerStore {
-		stream, err := nn.host.NewStream(context.Background(), peerInfo.ID, protocol.ID(TransactionProtocol))
-		if err != nil {
-			continue
-		}
-		stream.Write(txBytes)
-		stream.Close()
-	}
-	return nil
+	address := crypto.PubkeyToAddress(privateKey.PublicKey)
+	return address, privateKey
 }
 
-// Peer Discovery Service Methods
-func (pds *PeerDiscoveryService) StartDiscovery() {
-	// Simulated bootstrap nodes
-	bootstrapNodes := []string{
-		"/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUqwCgeoLyYyVNEfbcrqBHkT1nk3b",
-		"/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPeFqvoE4TWR4TjgFEA6Xc3DRQDNXfzwiWy",
-	}
-
-	for _, nodeAddr := range bootstrapNodes {
-		ma, err := multiaddr.NewMultiaddr(nodeAddr)
-		if err != nil {
-			continue
-		}
-
-		peerInfo, err := peer.AddrInfoFromP2pAddr(ma)
-		if err != nil {
-			continue
-		}
-
-		pds.peerDiscovered <- *peerInfo
-	}
-}
-
-// Smart Contract Registry Methods
-func (scr *SmartContractRegistry) DeployContract(
-	address common.Address, 
-	code []byte, 
-	owner common.Address,
-	executable func(tx *Transaction) ([]byte, error),
-) error {
-	scr.mutex.Lock()
-	defer scr.mutex.Unlock()
-
-	contract := &SmartContract{
-		Address:     address,
-		Code:        code,
-		Owner:       owner,
-		Executable:  executable,
-		Storage:     make(map[string][]byte),
-	}
-
-	scr.contracts[address] = contract
-	return nil
-}
-
-func (scr *SmartContractRegistry) ExecuteContract(tx *Transaction) ([]byte, error) {
-	scr.mutex.RLock()
-	defer scr.mutex.RUnlock()
-
-	contract, exists := scr.contracts[tx.To]
-	if !exists {
-		return nil, errors.New("contract not found")
-	}
-
-	return contract.Executable(tx)
-}
-
-// Main Initialization and Startup
 func main() {
-	// Initialize cryptographic utilities
-	cryptoUtils := &CryptoUtils{
-		keyStore: keystore.NewKeyStore(
-			"./keystore", 
-			keystore.StandardScryptN, 
-			keystore.StandardScryptP,
-		),
+	// Initialize Blockchain
+	blockchain = initializeBlockchain()
+
+	// Set up Logging
+	logrus.SetFormatter(&logrus.TextFormatter{
+		ForceColors:     true,
+		FullTimestamp:   true,
+		TimestampFormat: time.RFC3339,
+	})
+	logrus.SetOutput(colorable.NewColorableStdout())
+
+	// Start RPC Server in a goroutine so it runs asynchronously
+	go startRPCServer(blockchain)
+
+	// Generate Wallet
+	address, privateKey := generateWallet()
+	logrus.Infof("Generated wallet address: %s", address.Hex())
+
+	// Create a new transaction
+	tx := &Transaction{
+		From:      address,
+		To:        common.HexToAddress("0x0000000000000000000000000000000000000001"),
+		Value:     big.NewInt(10),
+		Nonce:     1,
+		CreatedAt: time.Now(),
 	}
 
-	// Generate node key pair
-	privateKey, nodeAddress, err := cryptoUtils.GenerateKeyPair()
+	// Sign the transaction
+	signature, err := signTransaction(privateKey, tx)
 	if err != nil {
-		log.Fatalf("Key generation error: %v", err)
+		logrus.Errorf("Failed to sign transaction: %v", err)
+	} else {
+		tx.Signature = signature
 	}
 
-	// Initialize blockchain
-	blockchain := &Blockchain{
-		chain:           []*Block{},
-		accountState:    make(map[common.Address]*Account),
-		transactionPool: []*Transaction{},
-		stateMutex:      sync.RWMutex{},
-		difficulty:      &big.Int{},
-		networkNodes:    map[peer.ID]*NetworkNode{},
-	}}
+	// Create and Add Block with Transaction if it was signed successfully
+	if tx.Signature != nil {
+		// Get the last block from the blockchain (this will be the most recent block)
+		previousBlock := blockchain.chain[len(blockchain.chain)-1]
+
+		// Create a new block with the transaction
+		block := blockchain.CreateNewBlock(previousBlock, []*Transaction{tx})
+
+		// Add the newly created block to the blockchain
+		err = blockchain.AddBlock(block)
+		if err != nil {
+			logrus.Errorf("Failed to add block: %v", err)
+		}
+	}
+
+	// Verbose Output on Blockchain State
+	logrus.Info("Blockchain State:")
+	for _, block := range blockchain.chain {
+		logrus.Infof("Block Height: %d", block.Header.Height)
+		for _, tx := range block.Transactions {
+			logrus.Infof("Transaction from %s to %s: %s", tx.From.Hex(), tx.To.Hex(), tx.Value.String())
+		}
+	}
+
+	// Block the main goroutine to keep the program running forever
+	select {}
+}
