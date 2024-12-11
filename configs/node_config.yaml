@@ -1,0 +1,24 @@
+# Node Configuration
+node:
+  network_port: 8080
+  max_peers: 50
+  sync_interval: 5m
+
+consensus:
+  type: delegated_pos
+  epoch_duration: 1h
+  min_stake: 10000
+  validator_count: 21
+
+token:
+  name: NativeChainToken
+  symbol: NCT
+  max_supply: 1000000000
+  initial_distribution: 500000000
+
+bridge:
+  supported_chains:
+    - ethereum
+    - binance_smart_chain
+    - polygon
+  min_validators: 3
