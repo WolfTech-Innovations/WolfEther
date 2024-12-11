@@ -11,8 +11,8 @@ consensus:
   validator_count: 21
 
 token:
-  name: NativeChainToken
-  symbol: NCT
+  name: WolfCoin
+  symbol: WLF
   max_supply: 1000000000
   initial_distribution: 500000000
 

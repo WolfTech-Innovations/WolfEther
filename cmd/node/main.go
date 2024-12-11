@@ -70,6 +70,13 @@ type Blockchain struct {
 	difficulty      *big.Int
 }
 
+type Token struct {
+	Name       string
+	Ticker     string
+	Decimals   uint8
+	TotalSupply *big.Int
+}
+
 type Account struct {
 	Address     common.Address
 	Balance     *big.Int
@@ -320,11 +327,35 @@ func main() {
 	address, privateKey := generateWallet()
 	logrus.Infof("Generated wallet address: %s", address.Hex())
 
-	// Create a new transaction
+	// Create Native Token: Wolf (WLF)
+	tokenName := "Wolf"
+	tokenTicker := "WLF"
+	tokenDecimals := uint8(18)
+
+	// Create a big int to hold the total supply (1 million WLF for example)
+	totalSupply := new(big.Int).Mul(big.NewInt(1000000), new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(tokenDecimals)), nil))
+
+	// Log Token Creation
+	logrus.Infof("Creating Native Token: %s (%s) with %d decimals.", tokenName, tokenTicker, tokenDecimals)
+	logrus.Infof("Total Supply: %s %s", totalSupply.String(), tokenTicker)
+
+	// Initialize the token (will be used in transactions)
+	token := &Token{
+		Name:      tokenName,
+		Ticker:    tokenTicker,
+		Decimals:  tokenDecimals,
+		TotalSupply: totalSupply,
+	}
+	logrus.Infof("Token Created: %s - %s", token.Name, token.Ticker)
+
+	// Amount to give to each new wallet: 0.0000001 WLF (in 18 decimals)
+	initialAmount := new(big.Int).Mul(big.NewInt(1), new(big.Int).Exp(big.NewInt(10), big.NewInt(10), nil))
+
+	// Create a new transaction to give 0.0000001 WLF to the new wallet
 	tx := &Transaction{
-		From:      address,
-		To:        common.HexToAddress("0x0000000000000000000000000000000000000001"),
-		Value:     big.NewInt(10),
+		From:      common.HexToAddress("0x0000000000000000000000000000000000000000"), // Use a dummy address as the "bank"
+		To:        address,
+		Value:     initialAmount,
 		Nonce:     1,
 		CreatedAt: time.Now(),
 	}
@@ -335,29 +366,33 @@ func main() {
 		logrus.Errorf("Failed to sign transaction: %v", err)
 	} else {
 		tx.Signature = signature
+		logrus.Infof("Transaction Signed Successfully")
 	}
 
-	// Create and Add Block with Transaction if it was signed successfully
+	// Create and Add Block with the initial token transfer if it was signed successfully
 	if tx.Signature != nil {
 		// Get the last block from the blockchain (this will be the most recent block)
 		previousBlock := blockchain.chain[len(blockchain.chain)-1]
+		logrus.Infof("Previous Block Height: %d", previousBlock.Header.Height)
 
-		// Create a new block with the transaction
+		// Create a new block with the initial token transfer transaction
 		block := blockchain.CreateNewBlock(previousBlock, []*Transaction{tx})
 
 		// Add the newly created block to the blockchain
 		err = blockchain.AddBlock(block)
 		if err != nil {
 			logrus.Errorf("Failed to add block: %v", err)
+		} else {
+			logrus.Infof("Block added successfully: %d", block.Header.Height)
 		}
 	}
 
 	// Verbose Output on Blockchain State
 	logrus.Info("Blockchain State:")
 	for _, block := range blockchain.chain {
-		logrus.Infof("Block Height: %d", block.Header.Height)
+		logrus.Infof("Block Height: %d, Hash: %s", block.Header.Height)
 		for _, tx := range block.Transactions {
-			logrus.Infof("Transaction from %s to %s: %s", tx.From.Hex(), tx.To.Hex(), tx.Value.String())
+			logrus.Infof("Transaction from %s to %s: Amount %s %s, Nonce: %d", tx.From.Hex(), tx.To.Hex(), tx.Value.String(), token.Ticker, tx.Nonce)
 		}
 	}
 
