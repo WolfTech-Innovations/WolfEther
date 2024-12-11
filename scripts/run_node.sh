@@ -18,13 +18,12 @@ NC='\033[0m' # No Color
 log() {
     local level=$1
     local message=$2
-    local timestamp=$(date "+%Y-%m-%d %H:%M:%S")
     
     # Ensure log directory exists
     mkdir -p "$LOG_DIR"
     
     # Write to log file
-    echo "[$timestamp] [$level] $message" >> "$LOG_DIR/node.log"
+    echo "[$level] $message" >> "$LOG_DIR/node.log"
     
     # Print to console based on log level
     case $level in
