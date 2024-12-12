@@ -1,13 +1,14 @@
 package main
 
 import (
-	"crypto/ecdsa"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"math/big"
 	"net/http"
+	"os"
 	"strconv"
 	"sync"
 	"time"
@@ -27,11 +28,13 @@ const (
 	DifficultyTarget     = 4
 	BlockTime            = 15
 	MaxBlockTransactions = 100
-	BlockchainDBPath     = "./blockchain_data"
+	BlockchainDBPath     = "./blockchain_data.json"
+	WolfCoinName         = "Wolf"
+	WolfTicker           = "WLF"
+	WolfDecimals         = 18
 )
 
 var (
-	// Simulating an in-memory "database"
 	blockchain *Blockchain
 )
 
@@ -78,10 +81,6 @@ type Account struct {
 	CodeHash    []byte
 }
 
-type NetworkNode struct {
-	Blockchain *Blockchain
-}
-
 type RPCHandler struct {
 	blockchain *Blockchain
 }
@@ -92,23 +91,27 @@ func NewRPCHandler(blockchain *Blockchain) *RPCHandler {
 	}
 }
 
-// Consensus and Block Addition
-func (bc *Blockchain) AddBlock(block *Block) error {
-	bc.stateMutex.Lock()
-	defer bc.stateMutex.Unlock()
-
-	bc.chain = append(bc.chain, block)
-	for _, tx := range block.Transactions {
-		if err := bc.processTransaction(tx); err != nil {
-			return err
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusOK)
+			return
 		}
-	}
+		next.ServeHTTP(w, r)
+	})
+}
 
-	logrus.WithFields(logrus.Fields{
-		"block_height": block.Header.Height,
-		"block_hash":   fmt.Sprintf("%x", block.Hash),
-	}).Info("Added Block")
-	return nil
+func (rpc *RPCHandler) handleGetChainID(w http.ResponseWriter, r *http.Request) {
+	response := struct {
+		ChainID int `json:"chain_id"`
+	}{
+		ChainID: NetworkID,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }
 
 func (rpc *RPCHandler) handleGetBlock(w http.ResponseWriter, r *http.Request) {
@@ -139,173 +142,154 @@ func (rpc *RPCHandler) handleGetBlock(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
-func (rpc *RPCHandler) handleSendTransaction(w http.ResponseWriter, r *http.Request) {
+func (rpc *RPCHandler) handleGaslessTransaction(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
 	var tx Transaction
 	if err := json.NewDecoder(r.Body).Decode(&tx); err != nil {
-		http.Error(w, "Invalid transaction data", http.StatusBadRequest)
+		http.Error(w, "Invalid request payload", http.StatusBadRequest)
 		return
 	}
 
-	// Process the transaction
-	err := rpc.blockchain.processTransaction(&tx)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	hash := sha256.Sum256([]byte(fmt.Sprintf("%s%s%d", tx.From.Hex(), tx.To.Hex(), tx.Value)))
+	pubKey, err := crypto.SigToPub(hash[:], tx.Signature)
+	if err != nil || crypto.PubkeyToAddress(*pubKey) != tx.From {
+		http.Error(w, "Invalid transaction signature", http.StatusBadRequest)
 		return
 	}
 
-	// Return success response
+	rpc.blockchain.stateMutex.Lock()
+	defer rpc.blockchain.stateMutex.Unlock()
+
+	rpc.blockchain.transactionPool = append(rpc.blockchain.transactionPool, &tx)
+	rpc.blockchain.saveBlockchain()
+
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("Transaction processed"))
+	w.Write([]byte("Transaction received"))
 }
 
-// Start the HTTP RPC server
+func (rpc *RPCHandler) handleNativeTransaction(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var tx Transaction
+	if err := json.NewDecoder(r.Body).Decode(&tx); err != nil {
+		http.Error(w, "Invalid request payload", http.StatusBadRequest)
+		return
+	}
+
+	rpc.blockchain.stateMutex.Lock()
+	defer rpc.blockchain.stateMutex.Unlock()
+
+	senderAccount := rpc.blockchain.accountState[tx.From]
+	receiverAccount := rpc.blockchain.accountState[tx.To]
+
+	if senderAccount == nil {
+		http.Error(w, "Sender account not found", http.StatusBadRequest)
+		return
+	}
+
+	if senderAccount.Balance.Cmp(tx.Value) < 0 {
+		http.Error(w, "Insufficient balance", http.StatusBadRequest)
+		return
+	}
+
+	if receiverAccount == nil {
+		receiverAccount = &Account{
+			Address: tx.To,
+			Balance: big.NewInt(0),
+		}
+		rpc.blockchain.accountState[tx.To] = receiverAccount
+	}
+
+	senderAccount.Balance.Sub(senderAccount.Balance, tx.Value)
+	receiverAccount.Balance.Add(receiverAccount.Balance, tx.Value)
+
+	rpc.blockchain.transactionPool = append(rpc.blockchain.transactionPool, &tx)
+	rpc.blockchain.saveBlockchain()
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Transaction processed successfully"))
+}
+
+func (bc *Blockchain) saveBlockchain() {
+	data, err := json.MarshalIndent(bc, "", "  ")
+	if err != nil {
+		logrus.Errorf("Failed to save blockchain: %v", err)
+		return
+	}
+
+	err = ioutil.WriteFile(BlockchainDBPath, data, 0644)
+	if err != nil {
+		logrus.Errorf("Failed to write blockchain file: %v", err)
+	}
+}
+
+func (bc *Blockchain) loadBlockchain() {
+	if _, err := os.Stat(BlockchainDBPath); os.IsNotExist(err) {
+		logrus.Info("Blockchain data file not found. Initializing new blockchain.")
+		return
+	}
+
+	data, err := ioutil.ReadFile(BlockchainDBPath)
+	if err != nil {
+		logrus.Fatalf("Failed to read blockchain data file: %v", err)
+	}
+
+	err = json.Unmarshal(data, bc)
+	if err != nil {
+		logrus.Fatalf("Failed to parse blockchain data file: %v", err)
+	}
+}
+
 func startRPCServer(blockchain *Blockchain) {
 	rpcHandler := NewRPCHandler(blockchain)
-	http.HandleFunc("/get_block", rpcHandler.handleGetBlock)
-	http.HandleFunc("/send_transaction", rpcHandler.handleSendTransaction)
+	http.Handle("/get_block", corsMiddleware(http.HandlerFunc(rpcHandler.handleGetBlock)))
+	http.Handle("/get_chain_id", corsMiddleware(http.HandlerFunc(rpcHandler.handleGetChainID)))
+	http.Handle("/gasless_transaction", corsMiddleware(http.HandlerFunc(rpcHandler.handleGaslessTransaction)))
+	http.Handle("/native_transaction", corsMiddleware(http.HandlerFunc(rpcHandler.handleNativeTransaction)))
+
 	logrus.Info("Starting RPC server at port 8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
 func initializeBlockchain() *Blockchain {
-	genesisAccount := common.HexToAddress("0x0000000000000000000000000000000000000000")
-	accountState := make(map[common.Address]*Account)
-	accountState[genesisAccount] = &Account{
-		Address: genesisAccount,
-		Balance: big.NewInt(1000000),
-	}
-
-	genesisBlock := &Block{
-		Header: BlockHeader{
-			Version:          1,
-			PreviousHash:     []byte{},
-			Timestamp:        uint64(time.Now().Unix()),
-			Height:           0,
-			DifficultyTarget: DifficultyTarget,
-		},
-		Transactions: []*Transaction{},
-	}
-
 	blockchain := &Blockchain{
-		chain:           []*Block{genesisBlock},
-		accountState:    accountState,
+		accountState:    make(map[common.Address]*Account),
 		transactionPool: []*Transaction{},
+	}
+	blockchain.loadBlockchain()
+	if len(blockchain.chain) == 0 {
+		genesisAccount := common.HexToAddress("0x0000000000000000000000000000000000000000")
+		blockchain.accountState[genesisAccount] = &Account{
+			Address: genesisAccount,
+			Balance: big.NewInt(1000000),
+		}
+
+		genesisBlock := &Block{
+			Header: BlockHeader{
+				Version:          1,
+				PreviousHash:     []byte{},
+				Timestamp:        uint64(time.Now().Unix()),
+				Height:           0,
+				DifficultyTarget: DifficultyTarget,
+			},
+			Transactions: []*Transaction{},
+		}
+		blockchain.chain = append(blockchain.chain, genesisBlock)
+		blockchain.saveBlockchain()
 	}
 	return blockchain
 }
 
-func (bc *Blockchain) mineBlock(block *Block) []byte {
-	for nonce := uint64(0); ; nonce++ {
-		block.Nonce = nonce
-		blockHash := sha256.Sum256(bc.serializeBlock(block))
-		if bc.isValidPoW(blockHash) {
-			return blockHash[:]
-		}
-	}
-}
-
-func (bc *Blockchain) isValidPoW(blockHash [32]byte) bool {
-	return true
-}
-
-func (bc *Blockchain) serializeBlock(block *Block) []byte {
-	var serialized []byte
-	serialized = append(serialized, block.Header.PreviousHash...)
-	serialized = append(serialized, block.Header.MerkleRoot...)
-	serialized = append(serialized, byte(block.Header.Timestamp))
-	serialized = append(serialized, byte(block.Nonce))
-	return serialized
-}
-
-// Gasless Transaction Processing (without gas fees)
-func (bc *Blockchain) processTransaction(tx *Transaction) error {
-	// Ensure the sender exists, create if necessary
-	sender := bc.accountState[tx.From]
-	if sender == nil {
-		// Create the sender account with an initial balance of 0 if not found
-		sender = &Account{
-			Address: tx.From,
-			Balance: new(big.Int), // Initial balance is 0
-			Nonce:   0,            // Initial nonce
-		}
-		bc.accountState[tx.From] = sender
-	}
-
-	// Ensure the recipient exists, create if necessary
-	recipient := bc.accountState[tx.To]
-	if recipient == nil {
-		// Create the recipient account with an initial balance of 0 if not found
-		recipient = &Account{
-			Address: tx.To,
-			Balance: new(big.Int), // Initial balance 0
-		}
-		bc.accountState[tx.To] = recipient
-	}
-
-	// Check if the sender has enough balance for the transaction
-	if sender.Balance.Cmp(tx.Value) < 0 {
-		// Log the issue but don't quit
-		fmt.Printf("Transaction from %s to %s failed due to insufficient funds.\n", tx.From.Hex(), tx.To.Hex())
-		// Return an error indicating insufficient balance, don't stop execution
-		return fmt.Errorf("insufficient balance for sender %s", tx.From.Hex())
-	}
-
-	// Update sender's balance and nonce
-	sender.Balance.Sub(sender.Balance, tx.Value)
-	sender.Nonce++
-
-	// Update recipient's balance
-	recipient.Balance.Add(recipient.Balance, tx.Value)
-
-	// Log success of the transaction
-	fmt.Printf("Transaction from %s to %s of value %s completed successfully.\n", tx.From.Hex(), tx.To.Hex(), tx.Value.String())
-
-	return nil
-}
-
-// Create Block with Transactions
-func (bc *Blockchain) CreateNewBlock(previousBlock *Block, transactions []*Transaction) *Block {
-	block := &Block{
-		Header: BlockHeader{
-			Version:          1,
-			PreviousHash:     previousBlock.Hash,
-			Timestamp:        uint64(time.Now().Unix()),
-			Height:           previousBlock.Header.Height + 1,
-			DifficultyTarget: DifficultyTarget,
-		},
-		Transactions: transactions,
-	}
-
-	blockHash := bc.mineBlock(block)
-	block.Hash = blockHash
-	return block
-}
-
-// Ethereum Transaction Signing
-func signTransaction(privateKey *ecdsa.PrivateKey, tx *Transaction) ([]byte, error) {
-	txData := fmt.Sprintf("%s%s%s%s", tx.From.Hex(), tx.To.Hex(), tx.Value.String(), strconv.FormatUint(tx.Nonce, 10))
-	hash := sha256.Sum256([]byte(txData))
-	signature, err := crypto.Sign(hash[:], privateKey)
-	if err != nil {
-		return nil, err
-	}
-	return signature, nil
-}
-
-func generateWallet() (common.Address, *ecdsa.PrivateKey) {
-	privateKey, err := crypto.GenerateKey()
-	if err != nil {
-		log.Fatal(err)
-	}
-	address := crypto.PubkeyToAddress(privateKey.PublicKey)
-	return address, privateKey
-}
-
 func main() {
-	// Initialize Blockchain
 	blockchain = initializeBlockchain()
 
-	// Set up Logging
 	logrus.SetFormatter(&logrus.TextFormatter{
 		ForceColors:     true,
 		FullTimestamp:   true,
@@ -313,54 +297,7 @@ func main() {
 	})
 	logrus.SetOutput(colorable.NewColorableStdout())
 
-	// Start RPC Server in a goroutine so it runs asynchronously
 	go startRPCServer(blockchain)
 
-	// Generate Wallet
-	address, privateKey := generateWallet()
-	logrus.Infof("Generated wallet address: %s", address.Hex())
-
-	// Create a new transaction
-	tx := &Transaction{
-		From:      address,
-		To:        common.HexToAddress("0x0000000000000000000000000000000000000001"),
-		Value:     big.NewInt(10),
-		Nonce:     1,
-		CreatedAt: time.Now(),
-	}
-
-	// Sign the transaction
-	signature, err := signTransaction(privateKey, tx)
-	if err != nil {
-		logrus.Errorf("Failed to sign transaction: %v", err)
-	} else {
-		tx.Signature = signature
-	}
-
-	// Create and Add Block with Transaction if it was signed successfully
-	if tx.Signature != nil {
-		// Get the last block from the blockchain (this will be the most recent block)
-		previousBlock := blockchain.chain[len(blockchain.chain)-1]
-
-		// Create a new block with the transaction
-		block := blockchain.CreateNewBlock(previousBlock, []*Transaction{tx})
-
-		// Add the newly created block to the blockchain
-		err = blockchain.AddBlock(block)
-		if err != nil {
-			logrus.Errorf("Failed to add block: %v", err)
-		}
-	}
-
-	// Verbose Output on Blockchain State
-	logrus.Info("Blockchain State:")
-	for _, block := range blockchain.chain {
-		logrus.Infof("Block Height: %d", block.Header.Height)
-		for _, tx := range block.Transactions {
-			logrus.Infof("Transaction from %s to %s: %s", tx.From.Hex(), tx.To.Hex(), tx.Value.String())
-		}
-	}
-
-	// Block the main goroutine to keep the program running forever
 	select {}
 }
