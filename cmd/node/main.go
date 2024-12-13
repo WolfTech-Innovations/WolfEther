@@ -463,6 +463,13 @@ func initializeBlockchain() *Blockchain {
 	return blockchain
 }
 
+func ServeHTML(w http.ResponseWriter, r *http.Request) {
+	// Serve the index.html file in the same directory as Go code
+	filePath := "index.html" // Adjust the file path if needed
+	http.ServeFile(w, r, filePath)
+}
+
+
 // main initializes the blockchain and starts the RPC server.
 func main() {
 	blockchain = initializeBlockchain()
@@ -475,6 +482,18 @@ func main() {
 	logrus.SetOutput(colorable.NewColorableStdout())
 
 	go startRPCServer(blockchain)
+    
+	// Serve the HTML page at the root URL
+	http.HandleFunc("/", ServeHTML)
 
+	// API routes already handled, so no need to define them again here
+
+	// Start the server on port 8080 (or another port)
+	port := ":8080"
+	fmt.Printf("Starting web server at http://localhost%s\n", port)
+	if err := http.ListenAndServe(port, nil); err != nil {
+		fmt.Println("Error starting server:", err)
+		os.Exit(1)
 	select {}
+ }
 }
