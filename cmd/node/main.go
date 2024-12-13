@@ -34,6 +34,8 @@ const (
 	WolfDecimals         = 18                       // Decimal precision for the cryptocurrency
 	InitialSupply        = "1000000000000000000000" // Total supply of WLF (1,000 WLF with 18 decimals)
 	DefaultWalletBalance = "100000000000000"        // Default balance for new wallets (0.0000001 WLF)
+	StakingReward        = 5                        // Annual staking reward in WLF (in percentage)
+	StakingPeriod        = 365                      // Staking period in days
 )
 
 var (
@@ -79,6 +81,7 @@ type Blockchain struct {
 	transactionPool []*Transaction              // Pending transactions
 	stateMutex      sync.RWMutex                // Mutex for thread-safe access
 	difficulty      *big.Int                    // Current difficulty target
+	stakes          map[common.Address]*Stake   // Stake map to track user stakes
 }
 
 // Account represents the state of a single address in the blockchain.
@@ -90,6 +93,15 @@ type Account struct {
 	CodeHash    []byte         // Hash of account's contract code (optional)
 }
 
+// Stake represents the staking details of an account.
+type Stake struct {
+	Amount      *big.Int // Amount staked by the user
+	StakedAt    time.Time // Time when the stake was made
+	Rewards     *big.Int  // Rewards earned by the user
+	LockDuration time.Duration // Duration for which the tokens are locked
+}
+
+// RPCHandler handles JSON-RPC requests.
 // RPCHandler handles JSON-RPC requests.
 type RPCHandler struct {
 	blockchain *Blockchain // Blockchain instance to handle requests
@@ -100,20 +112,6 @@ func NewRPCHandler(blockchain *Blockchain) *RPCHandler {
 	return &RPCHandler{
 		blockchain: blockchain,
 	}
-}
-
-// corsMiddleware adds CORS headers to HTTP responses.
-func corsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
 }
 
 // handleGetChainID responds with the network's Chain ID.
@@ -246,6 +244,127 @@ func (rpc *RPCHandler) handleCreateWallet(w http.ResponseWriter, r *http.Request
 	json.NewEncoder(w).Encode(response)
 }
 
+// handleGetBalance retrieves the balance of an address.
+func (rpc *RPCHandler) handleGetBalance(w http.ResponseWriter, r *http.Request) {
+	address := r.URL.Query().Get("address")
+	addr := common.HexToAddress(address)
+
+	rpc.blockchain.stateMutex.Lock()
+	defer rpc.blockchain.stateMutex.Unlock()
+
+	account, exists := rpc.blockchain.accountState[addr]
+	if !exists {
+		http.Error(w, "Account not found", http.StatusNotFound)
+		return
+	}
+
+	response := struct {
+		Balance string `json:"balance"`
+	}{
+		Balance: account.Balance.String(),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// handleSendTransaction processes a transaction from one account to another.
+func (rpc *RPCHandler) handleSendTransaction(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var tx Transaction
+	if err := json.NewDecoder(r.Body).Decode(&tx); err != nil {
+		http.Error(w, "Invalid request payload", http.StatusBadRequest)
+		return
+	}
+
+	// Verify signature
+	hash := sha256.Sum256([]byte(fmt.Sprintf("%s%s%d", tx.From.Hex(), tx.To.Hex(), tx.Value)))
+	pubKey, err := crypto.SigToPub(hash[:], tx.Signature)
+	if err != nil || crypto.PubkeyToAddress(*pubKey) != tx.From {
+		http.Error(w, "Invalid transaction signature", http.StatusBadRequest)
+		return
+	}
+
+	rpc.blockchain.stateMutex.Lock()
+	defer rpc.blockchain.stateMutex.Unlock()
+
+	// Process transaction
+	senderAccount := rpc.blockchain.accountState[tx.From]
+	receiverAccount := rpc.blockchain.accountState[tx.To]
+
+	if senderAccount == nil || receiverAccount == nil {
+		http.Error(w, "Account not found", http.StatusNotFound)
+		return
+	}
+
+	if senderAccount.Balance.Cmp(tx.Value) < 0 {
+		http.Error(w, "Insufficient balance", http.StatusBadRequest)
+		return
+	}
+
+	senderAccount.Balance.Sub(senderAccount.Balance, tx.Value)
+	receiverAccount.Balance.Add(receiverAccount.Balance, tx.Value)
+
+	// Add to transaction pool
+	rpc.blockchain.transactionPool = append(rpc.blockchain.transactionPool, &tx)
+	rpc.blockchain.saveBlockchain()
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Transaction processed successfully"))
+}
+
+// handleGetTransactionCount retrieves the nonce (transaction count) of an address.
+func (rpc *RPCHandler) handleGetTransactionCount(w http.ResponseWriter, r *http.Request) {
+	address := r.URL.Query().Get("address")
+	addr := common.HexToAddress(address)
+
+	rpc.blockchain.stateMutex.Lock()
+	defer rpc.blockchain.stateMutex.Unlock()
+
+	account, exists := rpc.blockchain.accountState[addr]
+	if !exists {
+		http.Error(w, "Account not found", http.StatusNotFound)
+		return
+	}
+
+	response := struct {
+		TransactionCount uint64 `json:"transaction_count"`
+	}{
+		TransactionCount: account.Nonce,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// handleGetCode retrieves the code (smart contract bytecode) at a given address.
+func (rpc *RPCHandler) handleGetCode(w http.ResponseWriter, r *http.Request) {
+	address := r.URL.Query().Get("address")
+	addr := common.HexToAddress(address)
+
+	rpc.blockchain.stateMutex.Lock()
+	defer rpc.blockchain.stateMutex.Unlock()
+
+	account, exists := rpc.blockchain.accountState[addr]
+	if !exists || len(account.CodeHash) == 0 {
+		http.Error(w, "No code at this address", http.StatusNotFound)
+		return
+	}
+
+	response := struct {
+		Code string `json:"code"`
+	}{
+		Code: fmt.Sprintf("%x", account.CodeHash),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
 // saveBlockchain persists the blockchain state to a file.
 func (bc *Blockchain) saveBlockchain() {
 	data, err := json.MarshalIndent(bc, "", "  ")
@@ -278,6 +397,25 @@ func (bc *Blockchain) loadBlockchain() {
 	}
 }
 
+// corsMiddleware handles CORS headers for cross-origin requests.
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Set CORS headers
+		w.Header().Set("Access-Control-Allow-Origin", "*")            // Allow all origins
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS") // Allow GET, POST, and OPTIONS methods
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With") // Allow necessary headers
+
+		// Handle preflight OPTIONS request (for CORS)
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		// Call the next handler
+		next.ServeHTTP(w, r)
+	})
+}
+
 // startRPCServer initializes and runs the JSON-RPC server.
 func startRPCServer(blockchain *Blockchain) {
 	rpcHandler := NewRPCHandler(blockchain)
@@ -285,9 +423,13 @@ func startRPCServer(blockchain *Blockchain) {
 	http.Handle("/eth_chainId", corsMiddleware(http.HandlerFunc(rpcHandler.handleGetChainID)))
 	http.Handle("/metamask_transaction", corsMiddleware(http.HandlerFunc(rpcHandler.handleMetaMaskTransaction)))
 	http.Handle("/create_wallet", corsMiddleware(http.HandlerFunc(rpcHandler.handleCreateWallet)))
+	http.Handle("/eth_getBalance", corsMiddleware(http.HandlerFunc(rpcHandler.handleGetBalance)))
+	http.Handle("/eth_sendTransaction", corsMiddleware(http.HandlerFunc(rpcHandler.handleSendTransaction)))
+	http.Handle("/eth_getTransactionCount", corsMiddleware(http.HandlerFunc(rpcHandler.handleGetTransactionCount)))
+	http.Handle("/eth_getCode", corsMiddleware(http.HandlerFunc(rpcHandler.handleGetCode)))
 
 	logrus.Info("Starting RPC server at port 8545")
-	log.Fatal(http.ListenAndServe(":8545", nil))
+	log.Fatal(http.ListenAndServe("0.0.0.0:8545", nil)) // Listen on all interfaces
 }
 
 // initializeBlockchain sets up the blockchain, including the genesis block.
