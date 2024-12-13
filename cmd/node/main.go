@@ -627,10 +627,3 @@ func main() {
 		select {}
 	}
 }
-
-// WolfTech Innovations: WolfEther Blockchain
-// The WolfEther Blockchain is not to be misused (E.g Crime, Money laundring, scams, or any other crimes or misuse and or forms of abuse)  
-// The WolfEther Blockchain is a work in progress but at a functional state and can be used to most extents
-// All losses are at users fault, if you lose anything you cannot be paid for your loss if item is of value or otherwise
-// As written here in the source, you hereby agree to theese terms once you use this software.
-// Do not edit this if you fork this software, theese messages are important.
