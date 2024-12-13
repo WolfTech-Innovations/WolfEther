@@ -12,7 +12,6 @@ import (
 	"strconv"
 	"sync"
 	"time"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/mattn/go-colorable"
@@ -129,13 +128,7 @@ func NewRPCHandler(blockchain *Blockchain) *RPCHandler {
 
 // handleGetChainID responds with the network's Chain ID.
 func (rpc *RPCHandler) handleGetChainID(w http.ResponseWriter, r *http.Request) {
-	response := struct {
-		ChainID int `json:"chain_id"`
-	}{
-		ChainID: NetworkID,
-	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	w.Write([]byte(`{"id":1, "result":"0x539"}`))
 }
 
 // handleGetBlock retrieves block details by height.
@@ -329,6 +322,38 @@ func (rpc *RPCHandler) handleSendTransaction(w http.ResponseWriter, r *http.Requ
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("Transaction processed successfully"))
 }
+
+func (rpc *RPCHandler) handleStake(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Address string `json:"address"`
+		Amount  string `json:"amount"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		http.Error(w, "Invalid payload", http.StatusBadRequest)
+		return
+	}
+
+	addr := common.HexToAddress(request.Address)
+	amount, _ := new(big.Int).SetString(request.Amount, 10)
+
+	rpc.blockchain.stateMutex.Lock()
+	defer rpc.blockchain.stateMutex.Unlock()
+
+	account, exists := rpc.blockchain.accountState[addr]
+	if !exists || account.Balance.Cmp(amount) < 0 {
+		http.Error(w, "Insufficient balance or account not found", http.StatusBadRequest)
+		return
+	}
+
+	// Lock funds and record stake
+	account.Balance.Sub(account.Balance, amount)
+	rpc.blockchain.stakes[addr] = &Stake{Amount: amount, StakedAt: time.Now(), Rewards: big.NewInt(0)}
+	rpc.blockchain.saveBlockchain()
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Stake recorded"))
+}
+
 
 // handleGetTransactionCount retrieves the nonce (transaction count) of an address.
 func (rpc *RPCHandler) handleGetTransactionCount(w http.ResponseWriter, r *http.Request) {
@@ -547,7 +572,7 @@ func startRPCServer(blockchain *Blockchain) {
     http.Handle("/eth_getTransactionCount", corsMiddleware(http.HandlerFunc(rpcHandler.handleGetTransactionCount)))
     http.Handle("/eth_getCode", corsMiddleware(http.HandlerFunc(rpcHandler.handleGetCode)))
     http.Handle("/api/metaTransaction", corsMiddleware(http.HandlerFunc(rpcHandler.handleMetaTransaction))) // Gas-less transactions
-
+    http.Handle("/eth_staking", corsMiddleware(http.HandlerFunc(rpcHandler.handleStake)))
     logrus.Info("Starting RPC server at port 8545")
     log.Fatal(http.ListenAndServe("0.0.0.0:8545", nil)) // Listen on all interfaces
 }
@@ -560,7 +585,8 @@ func initializeBlockchain() *Blockchain {
 	}
 	blockchain.loadBlockchain()
 	if len(blockchain.chain) == 0 {
-		adminWallet = common.HexToAddress("0x000000000000000000000000000000000000dead")
+		adminWallet = common.HexToAddress("0xWLF")
+		logrus.Info(adminWallet)
 		adminBalance, _ = new(big.Int).SetString(InitialSupply, 10)
 		blockchain.accountState[adminWallet] = &Account{
 			Address: adminWallet,
