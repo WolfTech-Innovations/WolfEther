@@ -95,9 +95,9 @@ type Account struct {
 
 // Stake represents the staking details of an account.
 type Stake struct {
-	Amount      *big.Int // Amount staked by the user
-	StakedAt    time.Time // Time when the stake was made
-	Rewards     *big.Int  // Rewards earned by the user
+	Amount       *big.Int      // Amount staked by the user
+	StakedAt     time.Time     // Time when the stake was made
+	Rewards      *big.Int      // Rewards earned by the user
 	LockDuration time.Duration // Duration for which the tokens are locked
 }
 
@@ -401,8 +401,8 @@ func (bc *Blockchain) loadBlockchain() {
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Set CORS headers
-		w.Header().Set("Access-Control-Allow-Origin", "*")            // Allow all origins
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS") // Allow GET, POST, and OPTIONS methods
+		w.Header().Set("Access-Control-Allow-Origin", "*")                                              // Allow all origins
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")                            // Allow GET, POST, and OPTIONS methods
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With") // Allow necessary headers
 
 		// Handle preflight OPTIONS request (for CORS)
@@ -419,7 +419,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 // startRPCServer initializes and runs the JSON-RPC server.
 func startRPCServer(blockchain *Blockchain) {
 	rpcHandler := NewRPCHandler(blockchain)
-	http.Handle("/get_block", corsMiddleware(http.HandlerFunc(rpcHandler.handleGetBlock)))
+	http.Handle("/eth_blockNumber", corsMiddleware(http.HandlerFunc(rpcHandler.handleGetBlock)))
 	http.Handle("/eth_chainId", corsMiddleware(http.HandlerFunc(rpcHandler.handleGetChainID)))
 	http.Handle("/metamask_transaction", corsMiddleware(http.HandlerFunc(rpcHandler.handleMetaMaskTransaction)))
 	http.Handle("/create_wallet", corsMiddleware(http.HandlerFunc(rpcHandler.handleCreateWallet)))
