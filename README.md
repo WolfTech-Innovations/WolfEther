@@ -8,7 +8,6 @@ Welcome to **WolfEther Blockchain**, a cutting-edge, fee-less blockchain network
 
 - **Fee-less Transactions:** No gas fees, ensuring a seamless user experience.
 - **Scalable Architecture:** Built to handle high throughput and large volumes of transactions.
-- **Developer-Friendly:** Comprehensive SDKs and tools for building dApps with ease.
 - **Energy Efficient:** Designed to minimize environmental impact.
 
 ---
