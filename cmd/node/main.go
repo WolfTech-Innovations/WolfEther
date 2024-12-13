@@ -19,251 +19,11 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-const indexHTML = `<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Blockchain WebUI</title>
-    <style>
-        /* General Styles */
-        body {
-            font-family: Arial, sans-serif;
-            background-color: #f4f4f9;
-            color: #333;
-            margin: 0;
-            padding: 0;
-        }
-        .container {
-            width: 80%;
-            margin: 0 auto;
-            padding: 20px;
-            max-width: 1200px;
-        }
-        h1 {
-            text-align: center;
-            font-size: 2em;
-            margin-bottom: 30px;
-            color: #2c3e50;
-        }
-        .section {
-            background-color: white;
-            margin-bottom: 20px;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-        }
-        h2 {
-            font-size: 1.6em;
-            margin-bottom: 15px;
-            color: #3498db;
-        }
-        input {
-            padding: 10px;
-            margin: 5px;
-            width: 100%;
-            max-width: 300px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            margin-bottom: 15px;
-            font-size: 1em;
-        }
-        button {
-            padding: 12px 20px;
-            border: none;
-            background-color: #007BFF;
-            color: white;
-            font-size: 1.1em;
-            cursor: pointer;
-            border-radius: 4px;
-            transition: background-color 0.3s ease;
-        }
-        button:hover {
-            background-color: #0056b3;
-        }
-        p {
-            font-size: 1.2em;
-            color: #333;
-        }
-        .response {
-            margin-top: 15px;
-            padding: 10px;
-            background-color: #eaf7e6;
-            border: 1px solid #2ecc71;
-            border-radius: 4px;
-            color: #2ecc71;
-            font-weight: bold;
-        }
-        .error {
-            background-color: #f8d7da;
-            border-color: #dc3545;
-            color: #dc3545;
-        }
-        .input-group {
-            display: flex;
-            flex-direction: column;
-            margin-bottom: 20px;
-        }
-        .input-group input {
-            width: 100%;
-        }
-        .input-group button {
-            width: 100%;
-        }
-        .section-info {
-            display: flex;
-            justify-content: space-between;
-        }
-    </style>
-</head>
-<body>
-
-    <div class="container">
-        <h1>Blockchain WebUI</h1>
-
-        <!-- Create Wallet -->
-        <div class="section">
-            <h2>Create Wallet</h2>
-            <button id="createWalletBtn">Create Wallet</button>
-            <p id="walletDetails" class="response"></p>
-        </div>
-
-        <!-- View Balance -->
-        <div class="section">
-            <h2>View Balance</h2>
-            <div class="input-group">
-                <input type="text" id="viewBalanceAddress" placeholder="Enter wallet address">
-                <button id="viewBalanceBtn">View Balance</button>
-            </div>
-            <p id="balanceDetails" class="response"></p>
-        </div>
-
-        <!-- Send Transaction -->
-        <div class="section">
-            <h2>Send Transaction</h2>
-            <div class="input-group">
-                <input type="text" id="senderAddress" placeholder="Sender Address">
-                <input type="text" id="receiverAddress" placeholder="Receiver Address">
-                <input type="text" id="amount" placeholder="Amount">
-                <button id="sendTransactionBtn">Send Transaction</button>
-            </div>
-            <p id="transactionStatus" class="response"></p>
-        </div>
-
-        <!-- Blockchain Info -->
-        <div class="section">
-            <h2>Blockchain Info</h2>
-            <div class="section-info">
-                <button id="getBlockNumberBtn">Get Block Number</button>
-                <button id="getChainIdBtn">Get Chain ID</button>
-            </div>
-            <p id="blockNumber" class="response"></p>
-            <p id="chainId" class="response"></p>
-        </div>
-    </div>
-
-    <script>
-        // Get the server IP address dynamically
-        const apiUrl = ` + "`http://${window.location.hostname}:8545`" + `; // Automatically uses the current server's IP and port 8545
-
-        // Create Wallet
-        document.getElementById('createWalletBtn').addEventListener('click', () => {
-            fetch(` + "`${apiUrl}/create_wallet`" + `, { method: 'POST' })
-                .then(response => response.json())
-                .then(data => {
-                    document.getElementById('walletDetails').innerText = ` + "`Address: ${data.address}, Private Key: ${data.private_key}`" + `;
-                    document.getElementById('walletDetails').classList.remove('error');
-                    document.getElementById('walletDetails').classList.add('response');
-                })
-                .catch(error => {
-                    document.getElementById('walletDetails').innerText = 'Error creating wallet.';
-                    document.getElementById('walletDetails').classList.remove('response');
-                    document.getElementById('walletDetails').classList.add('error');
-                });
-        });
-
-        // View Balance
-        document.getElementById('viewBalanceBtn').addEventListener('click', () => {
-            const address = document.getElementById('viewBalanceAddress').value;
-            fetch(` + "`${apiUrl}/eth_getBalance?address=${address}`" + `, { method: 'GET' })
-                .then(response => response.json())
-                .then(data => {
-                    document.getElementById('balanceDetails').innerText = ` + "`Balance: ${data.balance} WLF`" + `;
-                    document.getElementById('balanceDetails').classList.remove('error');
-                    document.getElementById('balanceDetails').classList.add('response');
-                })
-                .catch(error => {
-                    document.getElementById('balanceDetails').innerText = 'Error fetching balance.';
-                    document.getElementById('balanceDetails').classList.remove('response');
-                    document.getElementById('balanceDetails').classList.add('error');
-                });
-        });
-
-        // Send Transaction
-        document.getElementById('sendTransactionBtn').addEventListener('click', () => {
-            const sender = document.getElementById('senderAddress').value;
-            const receiver = document.getElementById('receiverAddress').value;
-            const amount = document.getElementById('amount').value;
-
-            const transaction = { from: sender, to: receiver, value: amount };
-
-            fetch(` + "`${apiUrl}/eth_sendTransaction`" + `, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(transaction),
-            })
-                .then(response => response.json())
-                .then(data => {
-                    document.getElementById('transactionStatus').innerText = ` + "`Transaction Status: ${data.result}`" + `;
-                    document.getElementById('transactionStatus').classList.remove('error');
-                    document.getElementById('transactionStatus').classList.add('response');
-                })
-                .catch(error => {
-                    document.getElementById('transactionStatus').innerText = 'Error sending transaction.';
-                    document.getElementById('transactionStatus').classList.remove('response');
-                    document.getElementById('transactionStatus').classList.add('error');
-                });
-        });
-
-        // Get Block Number
-        document.getElementById('getBlockNumberBtn').addEventListener('click', () => {
-            fetch(` + "`${apiUrl}/eth_blockNumber`" + `, { method: 'GET' })
-                .then(response => response.json())
-                .then(data => {
-                    document.getElementById('blockNumber').innerText = ` + "`Current Block Number: ${data.blockNumber}`" + `;
-                    document.getElementById('blockNumber').classList.remove('error');
-                    document.getElementById('blockNumber').classList.add('response');
-                })
-                .catch(error => {
-                    document.getElementById('blockNumber').innerText = 'Error fetching block number.';
-                    document.getElementById('blockNumber').classList.remove('response');
-                    document.getElementById('blockNumber').classList.add('error');
-                });
-        });
-
-        // Get Chain ID
-        document.getElementById('getChainIdBtn').addEventListener('click', () => {
-            fetch(` + "`${apiUrl}/eth_chainId`" + `, { method: 'GET' })
-                .then(response => response.json())
-                .then(data => {
-                    document.getElementById('chainId').innerText = ` + "`Chain ID: ${data.chainId}`" + `;
-                    document.getElementById('chainId').classList.remove('error');
-                    document.getElementById('chainId').classList.add('response');
-                })
-                .catch(error => {
-                    document.getElementById('chainId').innerText = 'Error fetching chain ID.';
-                    document.getElementById('chainId').classList.remove('response');
-                    document.getElementById('chainId').classList.add('error');
-                });
-        });
-    </script>
-
-</body>
-</html>`
+const indexHTML = `WolfEther 1.0.2 Blockchain running on Port 8545`
 
 const (
 	// Network and Blockchain Configuration
-	WolfEtherVersion     = "1.0.0"                  // Current version of the WolfEther blockchain
+	WolfEtherVersion     = "1.0.2"                  // Current version of the WolfEther blockchain
 	NetworkID            = 1337                     // Unique ID for the network
 	DefaultPort          = 30303                    // Default port for peer-to-peer communication
 	BlockReward          = 50                       // Reward for mining a block
@@ -323,8 +83,19 @@ type Blockchain struct {
 	transactionPool []*Transaction              // Pending transactions
 	stateMutex      sync.RWMutex                // Mutex for thread-safe access
 	difficulty      *big.Int                    // Current difficulty target
-	stakes          map[common.Address]*Stake   // Stake map to track user stakes
+	stakes map[common.Address]*Stake // Map for user stakes
 }
+
+type LiquidityPool struct {
+    PoolTokens     *big.Int
+    Token1Balance  *big.Int
+    Token2Balance  *big.Int
+    LiquidityProviders map[common.Address]*big.Int
+}
+
+var liquidityPool LiquidityPool
+
+
 
 // Account represents the state of a single address in the blockchain.
 type Account struct {
@@ -583,6 +354,112 @@ func (rpc *RPCHandler) handleGetTransactionCount(w http.ResponseWriter, r *http.
 	json.NewEncoder(w).Encode(response)
 }
 
+// Calculate staking rewards periodically (e.g., every block or set time interval)
+func (bc *Blockchain) calculateStakingRewards() {
+    for addr, stake := range bc.stakes {
+        _ = addr
+
+		// Calculate reward
+        rewardAmount := new(big.Int).Mul(stake.Amount, big.NewInt(StakingReward))
+        rewardAmount.Div(rewardAmount, big.NewInt(100)) // StakingReward is in percentage
+
+        stake.Rewards.Add(stake.Rewards, rewardAmount)
+    }
+}
+
+
+// Add liquidity to the pool
+func (rpc *RPCHandler) handleAddLiquidity(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodPost {
+        http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+        return
+    }
+
+    var liquidityRequest struct {
+        Address string `json:"address"`
+        Token1Amount string `json:"token1_amount"`
+        Token2Amount string `json:"token2_amount"`
+    }
+
+    if err := json.NewDecoder(r.Body).Decode(&liquidityRequest); err != nil {
+        http.Error(w, "Invalid request payload", http.StatusBadRequest)
+        return
+    }
+
+    addr := common.HexToAddress(liquidityRequest.Address)
+    token1Amount, _ := new(big.Int).SetString(liquidityRequest.Token1Amount, 10)
+    token2Amount, _ := new(big.Int).SetString(liquidityRequest.Token2Amount, 10)
+
+    rpc.blockchain.stateMutex.Lock()
+    defer rpc.blockchain.stateMutex.Unlock()
+
+    account, exists := rpc.blockchain.accountState[addr]
+    if !exists {
+        http.Error(w, "Account not found", http.StatusNotFound)
+        return
+    }
+
+    // Ensure account has enough tokens
+    if account.Balance.Cmp(token1Amount) < 0 || account.Balance.Cmp(token2Amount) < 0 {
+        http.Error(w, "Insufficient balance", http.StatusBadRequest)
+        return
+    }
+
+    // Lock the tokens into the liquidity pool
+    account.Balance.Sub(account.Balance, token1Amount)
+    account.Balance.Sub(account.Balance, token2Amount)
+
+    liquidityPool.Token1Balance.Add(liquidityPool.Token1Balance, token1Amount)
+    liquidityPool.Token2Balance.Add(liquidityPool.Token2Balance, token2Amount)
+    liquidityPool.LiquidityProviders[addr] = new(big.Int).Add(liquidityPool.LiquidityProviders[addr], token1Amount)
+
+    rpc.blockchain.saveBlockchain()
+
+    w.WriteHeader(http.StatusOK)
+    w.Write([]byte("Liquidity added successfully"))
+}
+
+// handleMetaTransaction allows users to send transactions without paying gas fees
+func (rpc *RPCHandler) handleMetaTransaction(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodPost {
+        http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+        return
+    }
+
+    var tx Transaction
+    if err := json.NewDecoder(r.Body).Decode(&tx); err != nil {
+        http.Error(w, "Invalid request payload", http.StatusBadRequest)
+        return
+    }
+
+    // Signature validation and processing as usual
+    hash := sha256.Sum256([]byte(fmt.Sprintf("%s%s%d", tx.From.Hex(), tx.To.Hex(), tx.Value)))
+    pubKey, err := crypto.SigToPub(hash[:], tx.Signature)
+    if err != nil || crypto.PubkeyToAddress(*pubKey) != tx.From {
+        http.Error(w, "Invalid transaction signature", http.StatusBadRequest)
+        return
+    }
+
+    // Process transaction as if gas was paid by another account (skip gas deduction)
+    senderAccount := rpc.blockchain.accountState[tx.From]
+    receiverAccount := rpc.blockchain.accountState[tx.To]
+
+    if senderAccount == nil || receiverAccount == nil {
+        http.Error(w, "Account not found", http.StatusNotFound)
+        return
+    }
+
+    senderAccount.Balance.Sub(senderAccount.Balance, tx.Value)
+    receiverAccount.Balance.Add(receiverAccount.Balance, tx.Value)
+
+    rpc.blockchain.transactionPool = append(rpc.blockchain.transactionPool, &tx)
+    rpc.blockchain.saveBlockchain()
+
+    w.WriteHeader(http.StatusOK)
+    w.Write([]byte("Meta transaction processed successfully"))
+}
+
+
 // handleGetCode retrieves the code (smart contract bytecode) at a given address.
 func (rpc *RPCHandler) handleGetCode(w http.ResponseWriter, r *http.Request) {
 	address := r.URL.Query().Get("address")
@@ -660,18 +537,19 @@ func corsMiddleware(next http.Handler) http.Handler {
 
 // startRPCServer initializes and runs the JSON-RPC server.
 func startRPCServer(blockchain *Blockchain) {
-	rpcHandler := NewRPCHandler(blockchain)
-	http.Handle("/eth_blockNumber", corsMiddleware(http.HandlerFunc(rpcHandler.handleGetBlock)))
-	http.Handle("/eth_chainId", corsMiddleware(http.HandlerFunc(rpcHandler.handleGetChainID)))
-	http.Handle("/metamask_transaction", corsMiddleware(http.HandlerFunc(rpcHandler.handleMetaMaskTransaction)))
-	http.Handle("/create_wallet", corsMiddleware(http.HandlerFunc(rpcHandler.handleCreateWallet)))
-	http.Handle("/eth_getBalance", corsMiddleware(http.HandlerFunc(rpcHandler.handleGetBalance)))
-	http.Handle("/eth_sendTransaction", corsMiddleware(http.HandlerFunc(rpcHandler.handleSendTransaction)))
-	http.Handle("/eth_getTransactionCount", corsMiddleware(http.HandlerFunc(rpcHandler.handleGetTransactionCount)))
-	http.Handle("/eth_getCode", corsMiddleware(http.HandlerFunc(rpcHandler.handleGetCode)))
+    rpcHandler := NewRPCHandler(blockchain)
+    http.Handle("/eth_blockNumber", corsMiddleware(http.HandlerFunc(rpcHandler.handleGetBlock)))
+    http.Handle("/eth_chainId", corsMiddleware(http.HandlerFunc(rpcHandler.handleGetChainID)))
+    http.Handle("/metamask_transaction", corsMiddleware(http.HandlerFunc(rpcHandler.handleMetaMaskTransaction)))
+    http.Handle("/create_wallet", corsMiddleware(http.HandlerFunc(rpcHandler.handleCreateWallet)))
+    http.Handle("/eth_getBalance", corsMiddleware(http.HandlerFunc(rpcHandler.handleGetBalance)))
+    http.Handle("/eth_sendTransaction", corsMiddleware(http.HandlerFunc(rpcHandler.handleSendTransaction)))
+    http.Handle("/eth_getTransactionCount", corsMiddleware(http.HandlerFunc(rpcHandler.handleGetTransactionCount)))
+    http.Handle("/eth_getCode", corsMiddleware(http.HandlerFunc(rpcHandler.handleGetCode)))
+    http.Handle("/api/metaTransaction", corsMiddleware(http.HandlerFunc(rpcHandler.handleMetaTransaction))) // Gas-less transactions
 
-	logrus.Info("Starting RPC server at port 8545")
-	log.Fatal(http.ListenAndServe("0.0.0.0:8545", nil)) // Listen on all interfaces
+    logrus.Info("Starting RPC server at port 8545")
+    log.Fatal(http.ListenAndServe("0.0.0.0:8545", nil)) // Listen on all interfaces
 }
 
 // initializeBlockchain sets up the blockchain, including the genesis block.
