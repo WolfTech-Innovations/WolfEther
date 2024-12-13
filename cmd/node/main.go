@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"sync"
 	"time"
+    "embed"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -463,12 +464,7 @@ func initializeBlockchain() *Blockchain {
 	return blockchain
 }
 
-func ServeHTML(w http.ResponseWriter, r *http.Request) {
-	// Serve the index.html file in the same directory as Go code
-	filePath := "index.html" // Adjust the file path if needed
-	http.ServeFile(w, r, filePath)
-}
-
+var webUI embed.FS
 
 // main initializes the blockchain and starts the RPC server.
 func main() {
@@ -483,17 +479,20 @@ func main() {
 
 	go startRPCServer(blockchain)
     
-	// Serve the HTML page at the root URL
-	http.HandleFunc("/", ServeHTML)
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		data, err := webUI.ReadFile("index.html")
+		if err != nil {
+			http.Error(w, "Error reading embedded HTML file", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html")
+		w.Write(data)
+	})
 
-	// API routes already handled, so no need to define them again here
-
-	// Start the server on port 8080 (or another port)
 	port := ":8080"
-	fmt.Printf("Starting web server at http://localhost%s\n", port)
+	fmt.Printf("Starting server on port %s...\n", port)
 	if err := http.ListenAndServe(port, nil); err != nil {
-		fmt.Println("Error starting server:", err)
-		os.Exit(1)
+		fmt.Printf("Error starting server: %v\n", err)
 	select {}
  }
 }
