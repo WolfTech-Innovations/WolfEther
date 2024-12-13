@@ -480,7 +480,7 @@ func main() {
 	go startRPCServer(blockchain)
     
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		data, err := webUI.ReadFile("index.html")
+		data, err := webUI.ReadFile("./index.html")
 		if err != nil {
 			http.Error(w, "Error reading embedded HTML file", http.StatusInternalServerError)
 			return
