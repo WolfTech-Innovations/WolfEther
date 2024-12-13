@@ -274,8 +274,8 @@ const (
 	WolfCoinName         = "Wolf"                   // Name of the cryptocurrency
 	WolfTicker           = "WLF"                    // Ticker symbol for the cryptocurrency
 	WolfDecimals         = 18                       // Decimal precision for the cryptocurrency
-	InitialSupply        = "1000000000000000000000" // Total supply of WLF (1,000 WLF with 18 decimals)
-	DefaultWalletBalance = "100000000000000"        // Default balance for new wallets (0.0000001 WLF)
+	InitialSupply        = "1000000000000000000000000" // Total supply of WLF (1M WLF with 18 decimals)
+	DefaultWalletBalance = "0.000000000001"        // Default balance for new wallets (0.0000001 WLF)
 	StakingReward        = 5                        // Annual staking reward in WLF (in percentage)
 	StakingPeriod        = 365                      // Staking period in days
 )
@@ -726,6 +726,9 @@ func main() {
 	// Start the server
 	port := ":8080"
 	fmt.Printf("Starting server on port %s...\n", port)
+	logrus.Info("Starting internal HTML server . . .")
+	logrus.Info("Loading Modules . . .")
+	logrus.Info("Server Started")
 	if err := http.ListenAndServe(port, nil); err != nil {
 		fmt.Printf("Error starting server: %v\n", err)
 		os.Exit(1)
@@ -739,9 +742,17 @@ func main() {
 			select {
 			case <-ticker.C:
 				blockchain.saveBlockchain()
+				logrus.Info("Blockchain Saved")
 			}
 		}
 	}()
 		select {}
 	}
 }
+
+// WolfTech Innovations: WolfEther Blockchain
+// The WolfEther Blockchain is not to be misused (E.g Crime, Money laundring, scams, or any other crimes or misuse and or forms of abuse)  
+// The WolfEther Blockchain is a work in progress but at a functional state and can be used to most extents
+// All losses are at users fault, if you lose anything you cannot be paid for your loss if item is of value or otherwise
+// As written here in the source, you hereby agree to theese terms once you use this software.
+// Do not edit this if you fork this software, theese messages are important.
