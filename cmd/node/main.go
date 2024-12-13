@@ -715,7 +715,7 @@ func main() {
 		TimestampFormat: time.RFC3339,
 	})
 	logrus.SetOutput(colorable.NewColorableStdout())
-
+    blockchain.loadBlockchain()
 	go startRPCServer(blockchain)
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -729,6 +729,19 @@ func main() {
 	if err := http.ListenAndServe(port, nil); err != nil {
 		fmt.Printf("Error starting server: %v\n", err)
 		os.Exit(1)
+			// Start periodic blockchain saving
+	go func() {
+		// Create a ticker that ticks every 10 seconds
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				blockchain.saveBlockchain()
+			}
+		}
+	}()
 		select {}
 	}
 }
