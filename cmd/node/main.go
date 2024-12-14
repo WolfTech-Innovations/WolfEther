@@ -19,12 +19,12 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-const indexHTML = `WolfEther 1.0.3 Blockchain running on Port 8545`
+const indexHTML = `WolfEther 1.0.4 Blockchain running on Port 8545`
 
 const (
 	// Network and Blockchain Configuration
-	WolfEtherVersion     = "1.0.3"                  // Current version of the WolfEther blockchain
-	NetworkID            = 1337                     // Unique ID for the network
+	WolfEtherVersion     = "1.0.4"                  // Current version of the WolfEther blockchain
+	NetworkID            = 468                   // Unique ID for the network
 	DefaultPort          = 30303                    // Default port for peer-to-peer communication
 	BlockReward          = 50                       // Reward for mining a block
 	DifficultyTarget     = 4                        // Proof-of-Work difficulty target
@@ -39,6 +39,14 @@ const (
 	StakingReward        = 5                        // Annual staking reward in WLF (in percentage)
 	StakingPeriod        = 365                      // Staking period in days
 )
+
+type UTXO struct {
+    TxID    string
+    Index   uint32
+    Value   *big.Int
+    Address common.Address
+}
+
 
 var (
 	blockchain   *Blockchain // Global blockchain instance
@@ -127,7 +135,11 @@ func NewRPCHandler(blockchain *Blockchain) *RPCHandler {
 
 // handleGetChainID responds with the network's Chain ID.
 func (rpc *RPCHandler) handleGetChainID(w http.ResponseWriter, r *http.Request) {
-	w.Write([]byte(`{"id":1, "result":"0x539"}`))
+	    // Set the content type to application/json for MetaMask compatibility
+		w.Header().Set("Content-Type", "application/json")
+    
+		// Return the Chain ID for WolfEther (0x1D4)
+		w.Write([]byte(`{"id":1, "result":"0x1D4"}`))
 }
 
 // handleGetBlock retrieves block details by height.
