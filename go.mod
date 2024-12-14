@@ -1,4 +1,4 @@
-module gasless-blockchain
+module WolfEther
 
 go 1.22.0
 
@@ -13,6 +13,7 @@ require (
 	github.com/chzyer/readline v1.5.1 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/ianlancetaylor/demangle v0.0.0-20240312041847-bd984b5ce465 // indirect
+	github.com/mattn/go-sqlite3 v1.14.24 // indirect
 	github.com/pion/transport/v3 v3.0.7 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 )
