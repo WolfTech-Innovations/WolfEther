@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/sha256"
+	 _"embed"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -16,15 +17,13 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/mattn/go-colorable"
 	"github.com/sirupsen/logrus"
-	"github.com/WolfTech-Innovations/WolfEther/cmd/node/WalletDaemon"
-
 )
 
-const indexHTML = `WolfEther 1.0.2 Blockchain running on Port 8545`
+const indexHTML = `WolfEther 1.0.3 Blockchain running on Port 8545`
 
 const (
 	// Network and Blockchain Configuration
-	WolfEtherVersion     = "1.0.2"                  // Current version of the WolfEther blockchain
+	WolfEtherVersion     = "1.0.3"                  // Current version of the WolfEther blockchain
 	NetworkID            = 1337                     // Unique ID for the network
 	DefaultPort          = 30303                    // Default port for peer-to-peer communication
 	BlockReward          = 50                       // Reward for mining a block
@@ -95,8 +94,6 @@ type LiquidityPool struct {
 }
 
 var liquidityPool LiquidityPool
-
-
 
 // Account represents the state of a single address in the blockchain.
 type Account struct {
