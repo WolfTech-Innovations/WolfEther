@@ -455,6 +455,32 @@ func (rpc *RPCHandler) handleAddLiquidity(w http.ResponseWriter, r *http.Request
     w.Write([]byte("Liquidity added successfully"))
 }
 
+func (handler *RPCHandler) handleGetGasPrice(w http.ResponseWriter, r *http.Request) {
+    // Return zero Gwei since it's gasless
+    gasPrice := "0x0"  // 0 Gwei in hex
+    response := RPCResponse{Result: gasPrice}
+    json.NewEncoder(w).Encode(response)
+}
+
+func (handler *RPCHandler) handleEstimateGas(w http.ResponseWriter, r *http.Request) {
+    // Since it's gasless, the estimation would also be zero
+    gasEstimate := "0x0"  // 0 gas in hex
+    response := RPCResponse{Result: gasEstimate}
+    json.NewEncoder(w).Encode(response)
+}
+
+func (handler *RPCHandler) handleCall(w http.ResponseWriter, r *http.Request) {
+    var params []interface{}
+    if err := json.NewDecoder(r.Body).Decode(&params); err != nil {
+        http.Error(w, err.Error(), http.StatusBadRequest)
+        return
+    }
+    mockResult := "0x0000000000000000000000000000000000000000"
+    response := RPCResponse{Result: mockResult}
+    json.NewEncoder(w).Encode(response)
+}
+
+
 // handleMetaTransaction allows users to send transactions without paying gas fees
 func (rpc *RPCHandler) handleMetaTransaction(w http.ResponseWriter, r *http.Request) {
     if r.Method != http.MethodPost {
@@ -584,6 +610,9 @@ func startRPCServer(blockchain *Blockchain) {
     http.Handle("/eth_getCode", corsMiddleware(http.HandlerFunc(rpcHandler.handleGetCode)))
     http.Handle("/api/metaTransaction", corsMiddleware(http.HandlerFunc(rpcHandler.handleMetaTransaction))) // Gas-less transactions
     http.Handle("/eth_staking", corsMiddleware(http.HandlerFunc(rpcHandler.handleStake)))
+    http.Handle("/eth_gasPrice", corsMiddleware(http.HandlerFunc(rpcHandler.handleGetGasPrice)))
+    http.Handle("/eth_call", corsMiddleware(http.HandlerFunc(rpcHandler.handleCall)))
+    http.Handle("/eth_estimateGas", corsMiddleware(http.HandlerFunc(rpcHandler.handleEstimateGas)))
     logrus.Info("Starting RPC server at port 8545")
     log.Fatal(http.ListenAndServe("0.0.0.0:8545", nil)) // Listen on all interfaces
 }
