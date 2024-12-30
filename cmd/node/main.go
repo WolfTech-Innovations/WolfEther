@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/mattn/go-colorable"
 	"github.com/sirupsen/logrus"
+	"github.com/WolfTech-Innovations/WolfEther/cmd/node/Bridge/Bridge"
 )
 
 const indexHTML = `WolfEther 1.0.4 Blockchain running on Port 8545`
@@ -73,6 +74,12 @@ type BlockHeader struct {
 	DifficultyTarget uint32         // Difficulty target for mining
 	Coinbase         common.Address // Address receiving the block reward
 }
+
+type RPCResponse struct {
+    Result string `json:"result"`
+    Error  string `json:"error,omitempty"`
+}
+
 
 // Transaction represents a transfer of value between accounts.
 type Transaction struct {
