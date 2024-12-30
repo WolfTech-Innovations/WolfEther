@@ -1,8 +1,6 @@
 module WolfEther
 
-go 1.22.0
-
-toolchain go1.23.1
+go 1.23.4
 
 require (
 	github.com/ethereum/go-ethereum v1.14.12
@@ -10,6 +8,7 @@ require (
 )
 
 require (
+	github.com/WolfTech-Innovations/WolfBridge v0.0.0-20241230004008-388f980f647b // indirect
 	github.com/chzyer/readline v1.5.1 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/ianlancetaylor/demangle v0.0.0-20240312041847-bd984b5ce465 // indirect
