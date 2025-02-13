@@ -4,6 +4,8 @@
 ## explicit; go 1.13
 # github.com/VictoriaMetrics/fastcache v1.12.2
 ## explicit; go 1.13
+# github.com/WolfTech-Innovations/WolfBridge v0.0.0-20241230004008-388f980f647b
+## explicit; go 1.23.4
 # github.com/benbjohnson/clock v1.3.5
 ## explicit; go 1.15
 # github.com/beorn7/perks v1.0.1

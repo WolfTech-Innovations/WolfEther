@@ -17,7 +17,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/mattn/go-colorable"
 	"github.com/sirupsen/logrus"
-	"github.com/WolfTech-Innovations/WolfBridge"
 )
 
 const indexHTML = `WolfEther 1.0.5 Blockchain running on Port 8545`
