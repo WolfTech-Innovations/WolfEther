@@ -18,7 +18,25 @@ import (
 	"github.com/mattn/go-colorable"
 	"github.com/sirupsen/logrus"
 	"github.com/WolfTech-Innovations/WolfBridge"
+        "context"
+        "github.com/ethereum/go-ethereum/rpc"
 )
+func connectToInfura() (*rpc.Client, error) {
+    client, err := rpc.Dial("https://eth.drpc.org/")
+    if err != nil {
+        return nil, err
+    }
+    return client, nil
+}
+
+func fetchEthereumBlockNumber(client *rpc.Client) (uint64, error) {
+    var blockNumber uint64
+    err := client.CallContext(context.Background(), &blockNumber, "eth_blockNumber")
+    if err != nil {
+        return 0, err
+    }
+    return blockNumber, nil
+}
 
 const indexHTML = `WolfEther 1.0.5 Blockchain running on Port 8545`
 
@@ -553,18 +571,28 @@ func (rpc *RPCHandler) handleGetCode(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
-// saveBlockchain persists the blockchain state to a file.
 func (bc *Blockchain) saveBlockchain() {
-	data, err := json.MarshalIndent(bc, "", "  ")
-	if err != nil {
-		logrus.Errorf("Failed to save blockchain: %v", err)
-		return
-	}
+    tempFile, err := ioutil.TempFile("", "blockchain_*.json")
+    if err != nil {
+        logrus.Errorf("Failed to create temp file: %v", err)
+        return
+    }
+    defer tempFile.Close()
 
-	err = ioutil.WriteFile(BlockchainDBPath, data, 0644)
-	if err != nil {
-		logrus.Errorf("Failed to write blockchain file: %v", err)
-	}
+    data, err := json.MarshalIndent(bc, "", "  ")
+    if err != nil {
+        logrus.Errorf("Failed to marshal blockchain: %v", err)
+        return
+    }
+
+    if _, err = tempFile.Write(data); err != nil {
+        logrus.Errorf("Failed to write temp file: %v", err)
+        return
+    }
+
+    if err = os.Rename(tempFile.Name(), BlockchainDBPath); err != nil {
+        logrus.Errorf("Failed to rename temp file: %v", err)
+    }
 }
 
 // loadBlockchain loads the blockchain state from a file.
