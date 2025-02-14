@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"errors"
 	"math/big"
 	"net/http"
 	"os"
@@ -38,6 +39,101 @@ func fetchEthereumBlockNumber(client *rpc.Client) (uint64, error) {
 }
 
 const indexHTML = `WolfEther 1.0.5 Blockchain running on Port 8545`
+
+
+// Domain represents a registered name in WolfEther's Domain Name System (WDNS)
+type Domain struct {
+	Name       string         `json:"name"`
+	Owner      common.Address `json:"owner"`
+	Resolver   common.Address `json:"resolver"`
+	Expiration int64          `json:"expiration"`
+}
+
+// WDNS is the main struct handling the domain registry type
+type WDNS struct {
+	Domains map[string]Domain
+	Mutex   sync.RWMutex
+}
+
+// NewWDNS initializes a new WDNS instance
+func NewWDNS() *WDNS {
+	return &WDNS{
+		Domains: make(map[string]Domain),
+	}
+}
+
+// RegisterDomain allows a user to register a new domain
+func (w *WDNS) RegisterDomain(name string, owner common.Address, resolver common.Address, durationDays int, payment *big.Int) error {
+	w.Mutex.Lock()
+	defer w.Mutex.Unlock()
+
+	if _, exists := w.Domains[name]; exists {
+		return errors.New("domain already registered")
+	}
+
+	expiration := time.Now().Add(time.Hour * 24 * time.Duration(durationDays)).Unix()
+
+	w.Domains[name] = Domain{
+		Name:       name,
+		Owner:      owner,
+		Resolver:   resolver,
+		Expiration: expiration,
+	}
+
+	return nil
+}
+
+// ResolveDomain returns the address associated with a domain
+func (w *WDNS) ResolveDomain(name string) (common.Address, error) {
+	w.Mutex.RLock()
+	defer w.Mutex.RUnlock()
+	domain, exists := w.Domains[name]
+	if !exists {
+		return common.Address{}, errors.New("domain not found")
+	}
+
+	if time.Now().Unix() > domain.Expiration {
+		return common.Address{}, errors.New("domain expired")
+	}
+
+	return domain.Resolver, nil
+}
+
+// TransferDomain transfers ownership of a domain to another address
+func (w *WDNS) TransferDomain(name string, newOwner common.Address) error {
+	w.Mutex.Lock()
+	defer w.Mutex.Unlock()
+	domain, exists := w.Domains[name]
+	if !exists {
+		return errors.New("domain not found")
+	}
+	domain.Owner = newOwner
+	w.Domains[name] = domain
+	return nil
+}
+// ExportDomains exports all domains as JSON
+func (w *WDNS) ExportDomains() ([]byte, error) {
+	w.Mutex.RLock()
+	defer w.Mutex.RUnlock()
+	return json.Marshal(w.Domains)
+}
+
+// SmartContract represents an executable contract on WolfEther
+type SmartContract struct {
+	Code      []byte         `json:"code"`
+	Owner     common.Address `json:"owner"`
+	Deployed  bool           `json:"deployed"`
+}
+
+// DeployContract deploys a smart contract on WDNS
+func (w *WDNS) DeployContract(code []byte, owner common.Address) (*SmartContract, error) {
+	contract := &SmartContract{
+		Code:     code,
+		Owner:    owner,
+		Deployed: true,
+	}
+	return contract, nil
+}
 
 const (
 	// Network and Blockchain Configuration
