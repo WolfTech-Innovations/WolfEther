@@ -1,47 +1,32 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
-	 _"embed"
+	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
-	"errors"
 	"math/big"
 	"net/http"
 	"os"
 	"strconv"
 	"sync"
 	"time"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/mattn/go-colorable"
 	"github.com/sirupsen/logrus"
-        "context"
-        "github.com/ethereum/go-ethereum/rpc"
 )
-func connectToInfura() (*rpc.Client, error) {
-    client, err := rpc.Dial("https://eth.drpc.org/")
-    if err != nil {
-        return nil, err
-    }
-    return client, nil
-}
 
-func fetchEthereumBlockNumber(client *rpc.Client) (uint64, error) {
-    var blockNumber uint64
-    err := client.CallContext(context.Background(), &blockNumber, "eth_blockNumber")
-    if err != nil {
-        return 0, err
-    }
-    return blockNumber, nil
-}
+const indexHTML = "<!DOCTYPE html><html lang=en><head><meta charset=UTF-8><meta name=viewport content=width=device-width, initial-scale=1.0><title>Blockchain Dashboard</title><style>body { font-family: Arial, sans-serif; padding: 20px; } .card { border: 1px solid #ccc; padding: 20px; margin-bottom: 10px; } button { padding: 10px; margin-top: 10px; cursor: pointer; } input { padding: 8px; width: 100%; margin-top: 10px; }</style><script>document.addEventListener(DOMContentLoaded,function(){async function fetchBlockNumber(){const response=await fetch(http://wolfetherum-precomp.onrender.com:8545/eth_blockNumber);document.getElementById(blockNumber).innerText=await response.text();}async function fetchChainId(){const response=await fetch(http://wolfetherum-precomp.onrender.com:8545/eth_chainId);document.getElementById(chainId).innerText=await response.text();}async function createWallet(){const response=await fetch(http://wolfetherum-precomp.onrender.com:8545/create_wallet);document.getElementById(walletCreated).innerText=await response.text();}async function fetchBalance(){const wallet=document.getElementById(walletAddress).value;const response=await fetch(http://wolfetherum-precomp.onrender.com:8545/eth_getBalance?address=${wallet});document.getElementById(balance).innerText=await response.text();}async function sendTransaction(){const wallet=document.getElementById(walletAddress).value;const response=await fetch(http://wolfetherum-precomp.onrender.com:8545/eth_sendTransaction,{method:POST,headers:{Content-Type:application/json},body:JSON.stringify({from:wallet,to:0xReceiverAddress,value:1000000000000000000})});document.getElementById(transactionHash).innerText=await response.text();}document.getElementById(createWalletBtn).addEventListener(click,createWallet);document.getElementById(fetchBalanceBtn).addEventListener(click,fetchBalance);document.getElementById(sendTransactionBtn).addEventListener(click,sendTransaction);fetchBlockNumber();fetchChainId();});</script></head><body><div class=card><h2>Blockchain Info</h2><p>Block Number: <span id=blockNumber>Loading...</span></p><p>Chain ID: <span id=chainId>Loading...</span></p></div><div class=card><h2>Wallet</h2><button id=createWalletBtn>Create Wallet</button><p>New Wallet: <span id=walletCreated></span></p><input id=walletAddress placeholder=Enter Wallet Address><button id=fetchBalanceBtn>Get Balance</button><p>Balance: <span id=balance></span> ETH</p></div><div class=card><h2>Transactions</h2><button id=sendTransactionBtn>Send 1 ETH</button><p>Transaction Hash: <span id=transactionHash></span></p></div></body></html>"
 
-const indexHTML = `WolfEther 1.0.5 Blockchain running on Port 8545`
+// Structs for Domain Name System
 
-
-// Domain represents a registered name in WolfEther's Domain Name System (WDNS)
 type Domain struct {
 	Name       string         `json:"name"`
 	Owner      common.Address `json:"owner"`
@@ -49,21 +34,18 @@ type Domain struct {
 	Expiration int64          `json:"expiration"`
 }
 
-// WDNS is the main struct handling the domain registry type
 type WDNS struct {
 	Domains map[string]Domain
 	Mutex   sync.RWMutex
 }
 
-// NewWDNS initializes a new WDNS instance
 func NewWDNS() *WDNS {
 	return &WDNS{
 		Domains: make(map[string]Domain),
 	}
 }
 
-// RegisterDomain allows a user to register a new domain
-func (w *WDNS) RegisterDomain(name string, owner common.Address, resolver common.Address, durationDays int, payment *big.Int) error {
+func (w *WDNS) RegisterDomain(name string, owner common.Address, resolver common.Address, durationDays int) error {
 	w.Mutex.Lock()
 	defer w.Mutex.Unlock()
 
@@ -72,95 +54,125 @@ func (w *WDNS) RegisterDomain(name string, owner common.Address, resolver common
 	}
 
 	expiration := time.Now().Add(time.Hour * 24 * time.Duration(durationDays)).Unix()
-
 	w.Domains[name] = Domain{
 		Name:       name,
 		Owner:      owner,
 		Resolver:   resolver,
 		Expiration: expiration,
 	}
-
 	return nil
 }
 
-// ResolveDomain returns the address associated with a domain
-func (w *WDNS) ResolveDomain(name string) (common.Address, error) {
-	w.Mutex.RLock()
-	defer w.Mutex.RUnlock()
-	domain, exists := w.Domains[name]
-	if !exists {
-		return common.Address{}, errors.New("domain not found")
-	}
+// Blockchain Syncing
 
-	if time.Now().Unix() > domain.Expiration {
-		return common.Address{}, errors.New("domain expired")
+func connectToEthereumNode() (*rpc.Client, error) {
+	client, err := rpc.Dial("https://eth.drpc.org/")
+	if err != nil {
+		return nil, err
 	}
-
-	return domain.Resolver, nil
+	return client, nil
 }
 
-// TransferDomain transfers ownership of a domain to another address
-func (w *WDNS) TransferDomain(name string, newOwner common.Address) error {
-	w.Mutex.Lock()
-	defer w.Mutex.Unlock()
-	domain, exists := w.Domains[name]
-	if !exists {
-		return errors.New("domain not found")
+func fetchEthereumBlockNumber(client *rpc.Client) (uint64, error) {
+	var blockNumber uint64
+	err := client.CallContext(context.Background(), &blockNumber, "eth_blockNumber")
+	if err != nil {
+		return 0, err
 	}
-	domain.Owner = newOwner
-	w.Domains[name] = domain
+	return blockNumber, nil
+}
+
+// Governance System
+
+type Proposal struct {
+	ID          uint64
+	Title       string
+	Description string
+	Votes       map[common.Address]bool
+	CreatedAt   time.Time
+}
+
+type Governance struct {
+	Proposals map[uint64]Proposal
+	Mutex     sync.RWMutex
+}
+
+func NewGovernance() *Governance {
+	return &Governance{
+		Proposals: make(map[uint64]Proposal),
+	}
+}
+
+func (g *Governance) CreateProposal(title string, description string) uint64 {
+	g.Mutex.Lock()
+	defer g.Mutex.Unlock()
+	proposalID := uint64(len(g.Proposals) + 1)
+	g.Proposals[proposalID] = Proposal{
+		ID:          proposalID,
+		Title:       title,
+		Description: description,
+		Votes:       make(map[common.Address]bool),
+		CreatedAt:   time.Now(),
+	}
+	return proposalID
+}
+
+func (g *Governance) Vote(proposalID uint64, voter common.Address, approve bool) error {
+	g.Mutex.Lock()
+	defer g.Mutex.Unlock()
+	proposal, exists := g.Proposals[proposalID]
+	if !exists {
+		return errors.New("proposal does not exist")
+	}
+	proposal.Votes[voter] = approve
+	g.Proposals[proposalID] = proposal
 	return nil
 }
-// ExportDomains exports all domains as JSON
-func (w *WDNS) ExportDomains() ([]byte, error) {
-	w.Mutex.RLock()
-	defer w.Mutex.RUnlock()
-	return json.Marshal(w.Domains)
-}
 
-// SmartContract represents an executable contract on WolfEther
-type SmartContract struct {
-	Code      []byte         `json:"code"`
-	Owner     common.Address `json:"owner"`
-	Deployed  bool           `json:"deployed"`
-}
-
-// DeployContract deploys a smart contract on WDNS
-func (w *WDNS) DeployContract(code []byte, owner common.Address) (*SmartContract, error) {
-	contract := &SmartContract{
-		Code:     code,
-		Owner:    owner,
-		Deployed: true,
+// RPC Handler
+func (rpc *RPCHandler) handleVoteProposal(w http.ResponseWriter, r *http.Request) {
+	var data struct {
+		ProposalID uint64 `json:"proposal_id"`
+		Voter      string `json:"voter"`
+		Approve    bool   `json:"approve"`
 	}
-	return contract, nil
+	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	voter := common.HexToAddress(data.Voter)
+	if err := rpc.governance.Vote(data.ProposalID, voter, data.Approve); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.Write([]byte("Vote recorded"))
 }
 
 const (
 	// Network and Blockchain Configuration
-	WolfEtherVersion     = "1.0.4"                  // Current version of the WolfEther blockchain
-	NetworkID            = 468                   // Unique ID for the network
-	DefaultPort          = 30303                    // Default port for peer-to-peer communication
-	BlockReward          = 50                       // Reward for mining a block
-	DifficultyTarget     = 4                        // Proof-of-Work difficulty target
-	BlockTime            = 15                       // Expected time (in seconds) per block
-	MaxBlockTransactions = 100                      // Maximum number of transactions per block
-	BlockchainDBPath     = "./blockchain_data.json" // Path to save blockchain data
-	WolfCoinName         = "Wolf"                   // Name of the cryptocurrency
-	WolfTicker           = "WLF"                    // Ticker symbol for the cryptocurrency
-	WolfDecimals         = 18                       // Decimal precision for the cryptocurrency
+	WolfEtherVersion     = "1.0.4"                     // Current version of the WolfEther blockchain
+	NetworkID            = 468                         // Unique ID for the network
+	DefaultPort          = 30303                       // Default port for peer-to-peer communication
+	BlockReward          = 50                          // Reward for mining a block
+	DifficultyTarget     = 4                           // Proof-of-Work difficulty target
+	BlockTime            = 15                          // Expected time (in seconds) per block
+	MaxBlockTransactions = 100                         // Maximum number of transactions per block
+	BlockchainDBPath     = "./blockchain_data.json"    // Path to save blockchain data
+	WolfCoinName         = "Wolf"                      // Name of the cryptocurrency
+	WolfTicker           = "WLF"                       // Ticker symbol for the cryptocurrency
+	WolfDecimals         = 18                          // Decimal precision for the cryptocurrency
 	InitialSupply        = "1000000000000000000000000" // Total supply of WLF (1M WLF with 18 decimals)
-	DefaultWalletBalance = "0.000000000001"        // Default balance for new wallets (0.0000001 WLF)
-	StakingReward        = 5                        // Annual staking reward in WLF (in percentage)
-	StakingPeriod        = 365                      // Staking period in days
+	DefaultWalletBalance = "0.000000000001"            // Default balance for new wallets (0.0000001 WLF)
+	StakingReward        = 5                           // Annual staking reward in WLF (in percentage)
+	StakingPeriod        = 365                         // Staking period in days
 )
 
 type UTXO struct {
-    TxID    string
-    Index   uint32
-    Value   *big.Int
-    Address common.Address
+	TxID    string
+	Index   uint32
+	Value   *big.Int
+	Address common.Address
 }
-
 
 var (
 	blockchain   *Blockchain // Global blockchain instance
@@ -189,10 +201,9 @@ type BlockHeader struct {
 }
 
 type RPCResponse struct {
-    Result string `json:"result"`
-    Error  string `json:"error,omitempty"`
+	Result string `json:"result"`
+	Error  string `json:"error,omitempty"`
 }
-
 
 // Transaction represents a transfer of value between accounts.
 type Transaction struct {
@@ -211,14 +222,14 @@ type Blockchain struct {
 	transactionPool []*Transaction              // Pending transactions
 	stateMutex      sync.RWMutex                // Mutex for thread-safe access
 	difficulty      *big.Int                    // Current difficulty target
-	stakes map[common.Address]*Stake // Map for user stakes
+	stakes          map[common.Address]*Stake   // Map for user stakes
 }
 
 type LiquidityPool struct {
-    PoolTokens     *big.Int
-    Token1Balance  *big.Int
-    Token2Balance  *big.Int
-    LiquidityProviders map[common.Address]*big.Int
+	PoolTokens         *big.Int
+	Token1Balance      *big.Int
+	Token2Balance      *big.Int
+	LiquidityProviders map[common.Address]*big.Int
 }
 
 var liquidityPool LiquidityPool
@@ -244,6 +255,8 @@ type Stake struct {
 // RPCHandler handles JSON-RPC requests.
 type RPCHandler struct {
 	blockchain *Blockchain // Blockchain instance to handle requests
+	governance *Governance
+	wdns       *WDNS
 }
 
 // NewRPCHandler creates a new instance of the RPCHandler.
@@ -255,11 +268,11 @@ func NewRPCHandler(blockchain *Blockchain) *RPCHandler {
 
 // handleGetChainID responds with the network's Chain ID.
 func (rpc *RPCHandler) handleGetChainID(w http.ResponseWriter, r *http.Request) {
-	    // Set the content type to application/json for MetaMask compatibility
-		w.Header().Set("Content-Type", "application/json")
-    
-		// Return the Chain ID for WolfEther (0x1D4)
-		w.Write([]byte(`{"id":1, "result":"0x1D4"}`))
+	// Set the content type to application/json for MetaMask compatibility
+	w.Header().Set("Content-Type", "application/json")
+
+	// Return the Chain ID for WolfEther (0x1D4)
+	w.Write([]byte(`{"id":1, "result":"0x1D4"}`))
 }
 
 // handleGetBlock retrieves block details by height.
@@ -485,7 +498,6 @@ func (rpc *RPCHandler) handleStake(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("Stake recorded"))
 }
 
-
 // handleGetTransactionCount retrieves the nonce (transaction count) of an address.
 func (rpc *RPCHandler) handleGetTransactionCount(w http.ResponseWriter, r *http.Request) {
 	address := r.URL.Query().Get("address")
@@ -512,135 +524,132 @@ func (rpc *RPCHandler) handleGetTransactionCount(w http.ResponseWriter, r *http.
 
 // Calculate staking rewards periodically (e.g., every block or set time interval)
 func (bc *Blockchain) calculateStakingRewards() {
-    for addr, stake := range bc.stakes {
-        _ = addr
+	for addr, stake := range bc.stakes {
+		_ = addr
 
 		// Calculate reward
-        rewardAmount := new(big.Int).Mul(stake.Amount, big.NewInt(StakingReward))
-        rewardAmount.Div(rewardAmount, big.NewInt(100)) // StakingReward is in percentage
+		rewardAmount := new(big.Int).Mul(stake.Amount, big.NewInt(StakingReward))
+		rewardAmount.Div(rewardAmount, big.NewInt(100)) // StakingReward is in percentage
 
-        stake.Rewards.Add(stake.Rewards, rewardAmount)
-    }
+		stake.Rewards.Add(stake.Rewards, rewardAmount)
+	}
 }
-
 
 // Add liquidity to the pool
 func (rpc *RPCHandler) handleAddLiquidity(w http.ResponseWriter, r *http.Request) {
-    if r.Method != http.MethodPost {
-        http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-        return
-    }
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 
-    var liquidityRequest struct {
-        Address string `json:"address"`
-        Token1Amount string `json:"token1_amount"`
-        Token2Amount string `json:"token2_amount"`
-    }
+	var liquidityRequest struct {
+		Address      string `json:"address"`
+		Token1Amount string `json:"token1_amount"`
+		Token2Amount string `json:"token2_amount"`
+	}
 
-    if err := json.NewDecoder(r.Body).Decode(&liquidityRequest); err != nil {
-        http.Error(w, "Invalid request payload", http.StatusBadRequest)
-        return
-    }
+	if err := json.NewDecoder(r.Body).Decode(&liquidityRequest); err != nil {
+		http.Error(w, "Invalid request payload", http.StatusBadRequest)
+		return
+	}
 
-    addr := common.HexToAddress(liquidityRequest.Address)
-    token1Amount, _ := new(big.Int).SetString(liquidityRequest.Token1Amount, 10)
-    token2Amount, _ := new(big.Int).SetString(liquidityRequest.Token2Amount, 10)
+	addr := common.HexToAddress(liquidityRequest.Address)
+	token1Amount, _ := new(big.Int).SetString(liquidityRequest.Token1Amount, 10)
+	token2Amount, _ := new(big.Int).SetString(liquidityRequest.Token2Amount, 10)
 
-    rpc.blockchain.stateMutex.Lock()
-    defer rpc.blockchain.stateMutex.Unlock()
+	rpc.blockchain.stateMutex.Lock()
+	defer rpc.blockchain.stateMutex.Unlock()
 
-    account, exists := rpc.blockchain.accountState[addr]
-    if !exists {
-        http.Error(w, "Account not found", http.StatusNotFound)
-        return
-    }
+	account, exists := rpc.blockchain.accountState[addr]
+	if !exists {
+		http.Error(w, "Account not found", http.StatusNotFound)
+		return
+	}
 
-    // Ensure account has enough tokens
-    if account.Balance.Cmp(token1Amount) < 0 || account.Balance.Cmp(token2Amount) < 0 {
-        http.Error(w, "Insufficient balance", http.StatusBadRequest)
-        return
-    }
+	// Ensure account has enough tokens
+	if account.Balance.Cmp(token1Amount) < 0 || account.Balance.Cmp(token2Amount) < 0 {
+		http.Error(w, "Insufficient balance", http.StatusBadRequest)
+		return
+	}
 
-    // Lock the tokens into the liquidity pool
-    account.Balance.Sub(account.Balance, token1Amount)
-    account.Balance.Sub(account.Balance, token2Amount)
+	// Lock the tokens into the liquidity pool
+	account.Balance.Sub(account.Balance, token1Amount)
+	account.Balance.Sub(account.Balance, token2Amount)
 
-    liquidityPool.Token1Balance.Add(liquidityPool.Token1Balance, token1Amount)
-    liquidityPool.Token2Balance.Add(liquidityPool.Token2Balance, token2Amount)
-    liquidityPool.LiquidityProviders[addr] = new(big.Int).Add(liquidityPool.LiquidityProviders[addr], token1Amount)
+	liquidityPool.Token1Balance.Add(liquidityPool.Token1Balance, token1Amount)
+	liquidityPool.Token2Balance.Add(liquidityPool.Token2Balance, token2Amount)
+	liquidityPool.LiquidityProviders[addr] = new(big.Int).Add(liquidityPool.LiquidityProviders[addr], token1Amount)
 
-    rpc.blockchain.saveBlockchain()
+	rpc.blockchain.saveBlockchain()
 
-    w.WriteHeader(http.StatusOK)
-    w.Write([]byte("Liquidity added successfully"))
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Liquidity added successfully"))
 }
 
 func (handler *RPCHandler) handleGetGasPrice(w http.ResponseWriter, r *http.Request) {
-    // Return zero Gwei since it's gasless
-    gasPrice := "0x0"  // 0 Gwei in hex
-    response := RPCResponse{Result: gasPrice}
-    json.NewEncoder(w).Encode(response)
+	// Return zero Gwei since it's gasless
+	gasPrice := "0x0" // 0 Gwei in hex
+	response := RPCResponse{Result: gasPrice}
+	json.NewEncoder(w).Encode(response)
 }
 
 func (handler *RPCHandler) handleEstimateGas(w http.ResponseWriter, r *http.Request) {
-    // Since it's gasless, the estimation would also be zero
-    gasEstimate := "0x0"  // 0 gas in hex
-    response := RPCResponse{Result: gasEstimate}
-    json.NewEncoder(w).Encode(response)
+	// Since it's gasless, the estimation would also be zero
+	gasEstimate := "0x0" // 0 gas in hex
+	response := RPCResponse{Result: gasEstimate}
+	json.NewEncoder(w).Encode(response)
 }
 
 func (handler *RPCHandler) handleCall(w http.ResponseWriter, r *http.Request) {
-    var params []interface{}
-    if err := json.NewDecoder(r.Body).Decode(&params); err != nil {
-        http.Error(w, err.Error(), http.StatusBadRequest)
-        return
-    }
-    mockResult := "0x0000000000000000000000000000000000000000"
-    response := RPCResponse{Result: mockResult}
-    json.NewEncoder(w).Encode(response)
+	var params []interface{}
+	if err := json.NewDecoder(r.Body).Decode(&params); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	mockResult := "0x0000000000000000000000000000000000000000"
+	response := RPCResponse{Result: mockResult}
+	json.NewEncoder(w).Encode(response)
 }
-
 
 // handleMetaTransaction allows users to send transactions without paying gas fees
 func (rpc *RPCHandler) handleMetaTransaction(w http.ResponseWriter, r *http.Request) {
-    if r.Method != http.MethodPost {
-        http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-        return
-    }
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 
-    var tx Transaction
-    if err := json.NewDecoder(r.Body).Decode(&tx); err != nil {
-        http.Error(w, "Invalid request payload", http.StatusBadRequest)
-        return
-    }
+	var tx Transaction
+	if err := json.NewDecoder(r.Body).Decode(&tx); err != nil {
+		http.Error(w, "Invalid request payload", http.StatusBadRequest)
+		return
+	}
 
-    // Signature validation and processing as usual
-    hash := sha256.Sum256([]byte(fmt.Sprintf("%s%s%d", tx.From.Hex(), tx.To.Hex(), tx.Value)))
-    pubKey, err := crypto.SigToPub(hash[:], tx.Signature)
-    if err != nil || crypto.PubkeyToAddress(*pubKey) != tx.From {
-        http.Error(w, "Invalid transaction signature", http.StatusBadRequest)
-        return
-    }
+	// Signature validation and processing as usual
+	hash := sha256.Sum256([]byte(fmt.Sprintf("%s%s%d", tx.From.Hex(), tx.To.Hex(), tx.Value)))
+	pubKey, err := crypto.SigToPub(hash[:], tx.Signature)
+	if err != nil || crypto.PubkeyToAddress(*pubKey) != tx.From {
+		http.Error(w, "Invalid transaction signature", http.StatusBadRequest)
+		return
+	}
 
-    // Process transaction as if gas was paid by another account (skip gas deduction)
-    senderAccount := rpc.blockchain.accountState[tx.From]
-    receiverAccount := rpc.blockchain.accountState[tx.To]
+	// Process transaction as if gas was paid by another account (skip gas deduction)
+	senderAccount := rpc.blockchain.accountState[tx.From]
+	receiverAccount := rpc.blockchain.accountState[tx.To]
 
-    if senderAccount == nil || receiverAccount == nil {
-        http.Error(w, "Account not found", http.StatusNotFound)
-        return
-    }
+	if senderAccount == nil || receiverAccount == nil {
+		http.Error(w, "Account not found", http.StatusNotFound)
+		return
+	}
 
-    senderAccount.Balance.Sub(senderAccount.Balance, tx.Value)
-    receiverAccount.Balance.Add(receiverAccount.Balance, tx.Value)
+	senderAccount.Balance.Sub(senderAccount.Balance, tx.Value)
+	receiverAccount.Balance.Add(receiverAccount.Balance, tx.Value)
 
-    rpc.blockchain.transactionPool = append(rpc.blockchain.transactionPool, &tx)
-    rpc.blockchain.saveBlockchain()
+	rpc.blockchain.transactionPool = append(rpc.blockchain.transactionPool, &tx)
+	rpc.blockchain.saveBlockchain()
 
-    w.WriteHeader(http.StatusOK)
-    w.Write([]byte("Meta transaction processed successfully"))
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Meta transaction processed successfully"))
 }
-
 
 // handleGetCode retrieves the code (smart contract bytecode) at a given address.
 func (rpc *RPCHandler) handleGetCode(w http.ResponseWriter, r *http.Request) {
@@ -667,27 +676,27 @@ func (rpc *RPCHandler) handleGetCode(w http.ResponseWriter, r *http.Request) {
 }
 
 func (bc *Blockchain) saveBlockchain() {
-    tempFile, err := ioutil.TempFile("", "blockchain_*.json")
-    if err != nil {
-        logrus.Errorf("Failed to create temp file: %v", err)
-        return
-    }
-    defer tempFile.Close()
+	tempFile, err := ioutil.TempFile("", "blockchain_*.json")
+	if err != nil {
+		logrus.Errorf("Failed to create temp file: %v", err)
+		return
+	}
+	defer tempFile.Close()
 
-    data, err := json.MarshalIndent(bc, "", "  ")
-    if err != nil {
-        logrus.Errorf("Failed to marshal blockchain: %v", err)
-        return
-    }
+	data, err := json.MarshalIndent(bc, "", "  ")
+	if err != nil {
+		logrus.Errorf("Failed to marshal blockchain: %v", err)
+		return
+	}
 
-    if _, err = tempFile.Write(data); err != nil {
-        logrus.Errorf("Failed to write temp file: %v", err)
-        return
-    }
+	if _, err = tempFile.Write(data); err != nil {
+		logrus.Errorf("Failed to write temp file: %v", err)
+		return
+	}
 
-    if err = os.Rename(tempFile.Name(), BlockchainDBPath); err != nil {
-        logrus.Errorf("Failed to rename temp file: %v", err)
-    }
+	if err = os.Rename(tempFile.Name(), BlockchainDBPath); err != nil {
+		logrus.Errorf("Failed to rename temp file: %v", err)
+	}
 }
 
 // loadBlockchain loads the blockchain state from a file.
@@ -729,22 +738,22 @@ func corsMiddleware(next http.Handler) http.Handler {
 
 // startRPCServer initializes and runs the JSON-RPC server.
 func startRPCServer(blockchain *Blockchain) {
-    rpcHandler := NewRPCHandler(blockchain)
-    http.Handle("/eth_blockNumber", corsMiddleware(http.HandlerFunc(rpcHandler.handleGetBlock)))
-    http.Handle("/eth_chainId", corsMiddleware(http.HandlerFunc(rpcHandler.handleGetChainID)))
-    http.Handle("/metamask_transaction", corsMiddleware(http.HandlerFunc(rpcHandler.handleMetaMaskTransaction)))
-    http.Handle("/create_wallet", corsMiddleware(http.HandlerFunc(rpcHandler.handleCreateWallet)))
-    http.Handle("/eth_getBalance", corsMiddleware(http.HandlerFunc(rpcHandler.handleGetBalance)))
-    http.Handle("/eth_sendTransaction", corsMiddleware(http.HandlerFunc(rpcHandler.handleSendTransaction)))
-    http.Handle("/eth_getTransactionCount", corsMiddleware(http.HandlerFunc(rpcHandler.handleGetTransactionCount)))
-    http.Handle("/eth_getCode", corsMiddleware(http.HandlerFunc(rpcHandler.handleGetCode)))
-    http.Handle("/api/metaTransaction", corsMiddleware(http.HandlerFunc(rpcHandler.handleMetaTransaction))) // Gas-less transactions
-    http.Handle("/eth_staking", corsMiddleware(http.HandlerFunc(rpcHandler.handleStake)))
-    http.Handle("/eth_gasPrice", corsMiddleware(http.HandlerFunc(rpcHandler.handleGetGasPrice)))
-    http.Handle("/eth_call", corsMiddleware(http.HandlerFunc(rpcHandler.handleCall)))
-    http.Handle("/eth_estimateGas", corsMiddleware(http.HandlerFunc(rpcHandler.handleEstimateGas)))
-    logrus.Info("Starting RPC server at port 8545")
-    log.Fatal(http.ListenAndServe("0.0.0.0:8545", nil)) // Listen on all interfaces
+	rpcHandler := NewRPCHandler(blockchain)
+	http.Handle("/eth_blockNumber", corsMiddleware(http.HandlerFunc(rpcHandler.handleGetBlock)))
+	http.Handle("/eth_chainId", corsMiddleware(http.HandlerFunc(rpcHandler.handleGetChainID)))
+	http.Handle("/metamask_transaction", corsMiddleware(http.HandlerFunc(rpcHandler.handleMetaMaskTransaction)))
+	http.Handle("/create_wallet", corsMiddleware(http.HandlerFunc(rpcHandler.handleCreateWallet)))
+	http.Handle("/eth_getBalance", corsMiddleware(http.HandlerFunc(rpcHandler.handleGetBalance)))
+	http.Handle("/eth_sendTransaction", corsMiddleware(http.HandlerFunc(rpcHandler.handleSendTransaction)))
+	http.Handle("/eth_getTransactionCount", corsMiddleware(http.HandlerFunc(rpcHandler.handleGetTransactionCount)))
+	http.Handle("/eth_getCode", corsMiddleware(http.HandlerFunc(rpcHandler.handleGetCode)))
+	http.Handle("/api/metaTransaction", corsMiddleware(http.HandlerFunc(rpcHandler.handleMetaTransaction))) // Gas-less transactions
+	http.Handle("/eth_staking", corsMiddleware(http.HandlerFunc(rpcHandler.handleStake)))
+	http.Handle("/eth_gasPrice", corsMiddleware(http.HandlerFunc(rpcHandler.handleGetGasPrice)))
+	http.Handle("/eth_call", corsMiddleware(http.HandlerFunc(rpcHandler.handleCall)))
+	http.Handle("/eth_estimateGas", corsMiddleware(http.HandlerFunc(rpcHandler.handleEstimateGas)))
+	logrus.Info("Starting RPC server at port 8545")
+	log.Fatal(http.ListenAndServe("0.0.0.0:8545", nil)) // Listen on all interfaces
 }
 
 // initializeBlockchain sets up the blockchain, including the genesis block.
@@ -789,7 +798,7 @@ func main() {
 		TimestampFormat: time.RFC3339,
 	})
 	logrus.SetOutput(colorable.NewColorableStdout())
-    blockchain.loadBlockchain()
+	blockchain.loadBlockchain()
 	go startRPCServer(blockchain)
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -806,20 +815,20 @@ func main() {
 	if err := http.ListenAndServe(port, nil); err != nil {
 		fmt.Printf("Error starting server: %v\n", err)
 		os.Exit(1)
-			// Start periodic blockchain saving
-	go func() {
-		// Create a ticker that ticks every 10 seconds
-		ticker := time.NewTicker(10 * time.Second)
-		defer ticker.Stop()
+		// Start periodic blockchain saving
+		go func() {
+			// Create a ticker that ticks every 10 seconds
+			ticker := time.NewTicker(10 * time.Second)
+			defer ticker.Stop()
 
-		for {
-			select {
-			case <-ticker.C:
-				blockchain.saveBlockchain()
-				logrus.Info("Blockchain Saved")
+			for {
+				select {
+				case <-ticker.C:
+					blockchain.saveBlockchain()
+					logrus.Info("Blockchain Saved")
+				}
 			}
-		}
-	}()
+		}()
 		select {}
 	}
 }
