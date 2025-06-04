@@ -19,6 +19,8 @@ github.com/WolfTech-Innovations/WolfBridge v0.0.0-20241230004008-388f980f647b/go
 github.com/aead/siphash v1.0.1/go.mod h1:Nywa3cDsYNNK3gaciGTWPwHt0wlpNV15vwmswBAUSII=
 github.com/allegro/bigcache v1.2.1-0.20190218064605-e24eb225f156/go.mod h1:Cb/ax3seSYIx7SuZdm2G2xzfwmv3TPSk2ucNfQESPXM=
 github.com/anmitsu/go-shlex v0.0.0-20161002113705-648efa622239/go.mod h1:2FmKhYUyUczH0OGQWaF5ceTx0UBShxjsH6f8oGKYe2c=
+github.com/barnex/cuda5 v0.0.0-20171012184954-da30a9b287d8 h1:lnbKU7kkMoF75PDPYaj0DLoD0p6lWtzeyXSR94PrQto=
+github.com/barnex/cuda5 v0.0.0-20171012184954-da30a9b287d8/go.mod h1:GnBnFz4V/+kxwKFnquvOOi+IjZoVJsIUbcAVOXLCxCo=
 github.com/benbjohnson/clock v1.1.0/go.mod h1:J11/hYXuz8f4ySSvYwY0FKfm+ezbsZBKZxNJlLklBHA=
 github.com/benbjohnson/clock v1.3.0/go.mod h1:J11/hYXuz8f4ySSvYwY0FKfm+ezbsZBKZxNJlLklBHA=
 github.com/benbjohnson/clock v1.3.5 h1:VvXlSJBzZpA/zum6Sj74hxwYI2DIxRWuNIoXAzHZz5o=

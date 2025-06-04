@@ -9,6 +9,7 @@ require (
 
 require (
 	github.com/WolfTech-Innovations/WolfBridge v0.0.0-20241230004008-388f980f647b // indirect
+	github.com/barnex/cuda5 v0.0.0-20171012184954-da30a9b287d8 // indirect
 	github.com/btcsuite/btcd v0.24.2 // indirect
 	github.com/btcsuite/btcd/btcec/v2 v2.3.5 // indirect
 	github.com/btcsuite/btcd/btcutil v1.1.6 // indirect
