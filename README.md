@@ -1,5 +1,5 @@
 # WolfEther Blockchain
-## RPC URL: http://wolfetherum-precomp.onrender.com:8545/
+
 Welcome to **WolfEther Blockchain**, a cutting-edge, fee-less blockchain network designed for efficiency, scalability, and accessibility. With WolfEther, transactions are processed without any gas fees, making it a perfect solution for microtransactions, decentralized applications, and large-scale enterprise operations.
 
 ---
