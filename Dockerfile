@@ -5,7 +5,7 @@ FROM golang:latest AS builder
 WORKDIR /app
 
 # Copy the Go source code into the container
-COPY . .
+COPY cmd/node/main.go .
 
 # Build the Go application
 RUN go build -o main .
