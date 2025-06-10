@@ -5,10 +5,10 @@ FROM golang:latest AS builder
 WORKDIR /app
 
 # Copy the Go source code into the container
-COPY cmd/node/main.go .
+COPY . .
 
 # Build the Go application
-RUN go build -o main .
+RUN go build -o main cmd/node/main.go
 
 # Create a new stage for the final image
 FROM alpine:latest
