@@ -19,4 +19,6 @@ COPY --from=builder /app/main /app/main
 # Set the entry point for the container
 ENTRYPOINT ["/app/main"]
 
-EXPOSE 9050, 8546, 8545
+EXPOSE 9050
+EXPOSE 8546
+EXPOSE 8545
