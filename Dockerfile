@@ -8,8 +8,8 @@ WORKDIR /app
 COPY . .
 
 # Build the Go application
-RUN go build -o main cmd/node/main.go
-
+RUN go build -o ./main cmd/node/main.go
+RUN go build -o /app/main cmd/node/main.go
 # Create a new stage for the final image
 FROM alpine:latest
 
@@ -18,3 +18,5 @@ COPY --from=builder /app/main /app/main
 
 # Set the entry point for the container
 ENTRYPOINT ["/app/main"]
+
+EXPOSE 9050, 8546, 8545
