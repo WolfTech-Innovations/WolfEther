@@ -1,3 +1,6 @@
+![Docker Pulls](https://img.shields.io/docker/pulls/wolftechinnovations/wolfether-node)
+![GitHub Repo stars](https://img.shields.io/github/stars/WolfTech-Innovations/wolfether?style=social)
+![GitHub last commit](https://img.shields.io/github/last-commit/WolfTech-Innovations/wolfether)
 # WolfEther - Anonymous P2P Blockchain Network
 
 **WolfEther** is a privacy-focused, fee-less hybrid blockchain that combines Proof-of-Work and Proof-of-Stake consensus with integrated Lightning Network channels - all running over Tor for maximum anonymity.
