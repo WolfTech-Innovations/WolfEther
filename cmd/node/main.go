@@ -103,4 +103,3 @@ func min(a,b uint32)uint32{if a<b{return a};return b}
 func startNetwork(netID uint32,port int){bc:=NewBlockchain(netID);rpc:=&RPC{bc:bc};go func(){ticker:=time.NewTicker(time.Duration(BlockTime)*time.Second);for range ticker.C{bc.AddBlock()}}();mux:=http.NewServeMux();routes:=map[string]http.HandlerFunc{"/balance":rpc.handleBalance,"/send":rpc.handleSendTx,"/stake":rpc.handleStake,"/wallet":rpc.handleCreateWallet,"/info":rpc.handleInfo};for path,handler:=range routes{mux.Handle(path,cors(rpc.security(http.HandlerFunc(handler))))};netName:="MainNet";if netID==TestNetID{netName="TestNet"};log.Printf("Starting %s on port %d",netName,port);log.Fatal(http.ListenAndServe(":"+strconv.Itoa(port),mux))}
 
 func main(){netID:=uint32(MainNetID);port:=MainPort;if len(os.Args)>1&&os.Args[1]=="testnet"{netID=TestNetID;port=TestPort};log.Printf("Initializing WolfEther blockchain node...");startNetwork(netID,port)}
-
