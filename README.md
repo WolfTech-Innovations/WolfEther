@@ -1,4 +1,4 @@
-![Docker Pulls](https://img.shields.io/docker/pulls/wolftechinnovations/wolfether-proxy)
+![Docker Pulls](https://img.shields.io/docker/pulls/wolftechinnovations/wolfether-node)
 ![GitHub Repo stars](https://img.shields.io/github/stars/WolfTech-Innovations/wolfether?style=social)
 ![GitHub last commit](https://img.shields.io/github/last-commit/WolfTech-Innovations/wolfether)
 # WolfEther - Anonymous P2P Blockchain Network
